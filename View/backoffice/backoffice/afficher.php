@@ -1,8 +1,137 @@
 <?php
-require_once 'C:\xampp\htdocs\mon_project_web\controller\utilisateurC.php';
+require_once 'C:\xampp\htdocs\mon_project_web\config.php';
+require_once 'C:\xampp\htdocs\mon_project_web\model\utilisateur.php';
+require_once 'C:\xampp\htdocs\mon_project_web\controller\UtilisateurC.php';
+
 $utilisateurC = new UtilisateurC();
-$utilisateurs = $utilisateurC->afficherUtilisateurs();
+$tri = isset($_GET['tri']) ? $_GET['tri'] : null;
+$utilisateurs = $utilisateurC->afficherUtilisateurs($tri);
+
+// Export PDF pour un seul utilisateur
+if (isset($_GET['export_user']) && is_numeric($_GET['export_user'])) {
+    require_once 'C:\xampp\htdocs\mon_project_web\config.php';
+    require_once 'C:\xampp\htdocs\mon_project_web\model\utilisateur.php';
+    require_once 'C:\xampp\htdocs\mon_project_web\controller\UtilisateurC.php';
+    require_once 'C:\xampp\htdocs\mon_project_web\TCPDF-main\tcpdf.php';
+
+    $utilisateurC = new UtilisateurC();
+    $userId = (int)$_GET['export_user'];
+    $user = $utilisateurC->getUtilisateurById($userId);
+
+    if ($user) {
+        $pdf = new TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
+        $pdf->AddPage();
+        $pdf->SetFont('helvetica', '', 12);
+
+        // ✅ Text info to encode in QR code (no URL)
+        $userDataForQR = "Fiche Utilisateur\n";
+        $userDataForQR .= "ID: {$user['id']}\n";
+        $userDataForQR .= "Nom: {$user['nom']}\n";
+        $userDataForQR .= "Prénom: {$user['prenom']}\n";
+        $userDataForQR .= "Email: {$user['email']}\n";
+        $userDataForQR .= "Téléphone: {$user['telephone']}\n";
+        $userDataForQR .= "Adresse: {$user['adresse']}\n";
+        $userDataForQR .= "Rôle: {$user['role']}\n";
+        $userDataForQR .= "Statut: " . (($user['actif'] ?? 1) ? 'Actif' : 'Inactif');
+
+        // CSS style
+        $style = '
+        <style>
+            .header { color: #2d5bd8; font-size: 18px; font-weight: bold; margin-bottom: 10px; }
+            .table { border-collapse: collapse; width: 100%; margin-bottom: 15px; }
+            .table th { background-color: #f2f2f2; text-align: left; padding: 8px; width: 30%; }
+            .table td { padding: 8px; border-bottom: 1px solid #ddd; }
+            .status-active { color: #1cc88a; font-weight: bold; }
+            .status-inactive { color: #e74a3b; font-weight: bold; }
+            .qr-container { text-align: center; margin: 15px 0; }
+        </style>
+        ';
+
+        // HTML content for the PDF
+        $html = $style . '
+        <div class="header">Fiche Utilisateur</div>
+        <table class="table">
+            <tr><th>ID</th><td>' . htmlspecialchars($user['id']) . '</td></tr>
+            <tr><th>Nom</th><td>' . htmlspecialchars($user['nom']) . '</td></tr>
+            <tr><th>Prénom</th><td>' . htmlspecialchars($user['prenom']) . '</td></tr>
+            <tr><th>Email</th><td>' . htmlspecialchars($user['email']) . '</td></tr>
+            <tr><th>Téléphone</th><td>' . htmlspecialchars($user['telephone']) . '</td></tr>
+            <tr><th>Adresse</th><td>' . htmlspecialchars($user['adresse']) . '</td></tr>
+            <tr><th>Rôle</th><td>' . htmlspecialchars($user['role']) . '</td></tr>
+            <tr><th>Statut</th><td><span class="' . (($user['actif'] ?? 1) ? 'status-active' : 'status-inactive') . '">' 
+                . (($user['actif'] ?? 1) ? 'Actif' : 'Inactif') . '</span></td></tr>
+        </table>
+
+        <div class="qr-container">
+            <b>QR Code contenant les mêmes informations</b>
+        </div>';
+
+        $pdf->writeHTML($html, true, false, true, false, '');
+
+        // QR Code with user info text
+        $qrCodeParams = [
+            'border' => 1,
+            'vpadding' => 'auto',
+            'hpadding' => 'auto',
+            'fgcolor' => array(0, 0, 0),
+            'bgcolor' => false,
+            'module_width' => 1,
+            'module_height' => 1
+        ];
+        $pdf->write2DBarcode($userDataForQR, 'QRCODE,L', 75, $pdf->GetY(), 60, 60, $qrCodeParams, 'N');
+        $pdf->SetY($pdf->GetY() + 65);
+
+        // Footer
+        $pdf->writeHTML('<div style="text-align:center; font-size:10px; color:#888;">'
+            . 'Généré le ' . date('d/m/Y à H:i') . ' - Pure Vibe</div>', true, false, true, false, '');
+
+        $pdf->Output('utilisateur_' . $user['id'] . '.pdf', 'D');
+        exit;
+    }
+}
+
+// Export PDF global (votre code existant)
+if (isset($_GET['export']) && $_GET['export'] == 'pdf') {
+    require_once 'C:\xampp\htdocs\mon_project_web\TCPDF-main\tcpdf.php';
+    
+    $pdf = new TCPDF();
+    $pdf->AddPage();
+    $pdf->SetFont('helvetica', '', 12);
+
+    $html = '<h1>Liste des Utilisateurs</h1>
+    <table border="1" cellpadding="5">
+    <tr>
+        <th>ID</th>
+        <th>Nom</th>
+        <th>Prénom</th>
+        <th>Email</th>
+        <th>Téléphone</th>
+        <th>Adresse</th>
+        <th>Rôle</th>
+        <th>Statut</th>
+    </tr>';
+
+    foreach ($utilisateurs as $user) {
+        $html .= '<tr>
+            <td>' . htmlspecialchars($user['id']) . '</td>
+            <td>' . htmlspecialchars($user['nom']) . '</td>
+            <td>' . htmlspecialchars($user['prenom']) . '</td>
+            <td>' . htmlspecialchars($user['email']) . '</td>
+            <td>' . htmlspecialchars($user['telephone']) . '</td>
+            <td>' . htmlspecialchars($user['adresse']) . '</td>
+            <td>' . htmlspecialchars($user['role']) . '</td>
+            <td>' . (($user['actif'] ?? 1) ? 'Actif' : 'Inactif') . '</td>
+        </tr>';
+    }
+    $html .= '</table>';
+
+    $pdf->writeHTML($html, true, false, true, false, '');
+    $pdf->Output('liste_utilisateurs.pdf', 'D');
+    exit;
+}
+
 ?>
+
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -82,7 +211,7 @@ $utilisateurs = $utilisateurC->afficherUtilisateurs();
                     <h1 class="h3 mb-0 text-gray-800">Liste des Utilisateurs</h1>
                     <div class="export-buttons">
                         <button class="btn btn-success" onclick="exportToExcel()"><i class="fas fa-file-excel mr-1"></i> Excel</button>
-                        <button class="btn btn-danger" onclick="exportToPDF()"><i class="fas fa-file-pdf mr-1"></i> PDF</button>
+                        <a href="afficher.php?export=pdf" class="btn btn-danger"><i class="fas fa-file-pdf mr-1"></i> PDF</a>
                     </div>
                 </div>
 
@@ -113,6 +242,7 @@ $utilisateurs = $utilisateurC->afficherUtilisateurs();
                                                 <th>Rôle</th>
                                                 <th>Statut</th>
                                             </tr>
+                                            
                                         </thead>
                                         <tbody>
                                             <?php foreach ($utilisateurs as $u): ?>
@@ -124,6 +254,12 @@ $utilisateurs = $utilisateurC->afficherUtilisateurs();
                                                 <td><?= htmlspecialchars($u['adresse']) ?></td>
                                                 <td><?= htmlspecialchars($u['role']) ?></td>
                                                 <td><span class="badge <?= ($u['actif'] ?? 1) ? 'badge-active' : 'badge-inactive' ?>"><?= ($u['actif'] ?? 1) ? 'Actif' : 'Inactif' ?></span></td>
+                                                <td>
+    
+                                                <a href="afficher.php?export_user=<?= $u['id'] ?>" class="btn btn-sm btn-info">
+    <i class="fas fa-file-pdf"></i> PDF
+</a>
+</td>
                                             </tr>
                                             <?php endforeach; ?>
                                         </tbody>
@@ -135,7 +271,10 @@ $utilisateurs = $utilisateurC->afficherUtilisateurs();
                 </div>
             </div>
         </div>
-
+<form method="GET" action="afficher.php">
+    <button type="submit" name="tri" value="ASC">Trier par nom croissante</button>
+    <button type="submit" name="tri" value="DESC">Trier par nom décroissante</button>
+</form>
         <footer class="sticky-footer bg-white">
             <div class="container my-auto">
                 <div class="copyright text-center my-auto">
@@ -163,6 +302,7 @@ $utilisateurs = $utilisateurC->afficherUtilisateurs();
     </div>
   </div>
 </div>
+
 
 <script src="vendor/jquery/jquery.min.js"></script>
 <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
@@ -193,12 +333,30 @@ $(document).ready(function() {
 });
 
 function exportToExcel() {
-    alert('Export vers Excel simulé. En production, cela générerait un vrai fichier Excel.');
-}
-
-function exportToPDF() {
-    alert('Export vers PDF simulé. En production, cela générerait un vrai fichier PDF.');
+    // Créer un fichier Excel avec les données du tableau
+    let csv = 'ID,Nom complet,Email,Téléphone,Adresse,Rôle,Statut\n';
+    
+    $('#dataTable tbody tr').each(function() {
+        const cells = $(this).find('td');
+        csv += `"${cells.eq(0).text()}","${cells.eq(1).text()}","${cells.eq(2).text()}","${cells.eq(3).text()}","${cells.eq(4).text()}","${cells.eq(5).text()}","${cells.eq(6).text()}"\n`;
+    });
+    
+    // Créer un lien de téléchargement
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'liste_utilisateurs.csv');
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 </script>
 </body>
 </html>
+
+
+
