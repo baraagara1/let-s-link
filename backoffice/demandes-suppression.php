@@ -29,13 +29,23 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
         $reservationId = (int)$demande['reservation_id'];
 
         if ($action === 'accepter') {
-            // 🔥 CORRECT : Supprimer la réservation (PAS le covoiturage)
+            // Récupérer les infos nécessaires
+            $nbPlaces = (int)$demande['nb_places'];
+            $idCovoiturage = (int)$demande['covoiturage_id'];
+        
+            // Supprimer la réservation
             $delete = $pdo->prepare("DELETE FROM reservations WHERE id_res = ?");
             $delete->execute([$reservationId]);
-
+        
+            // Incrémenter les places disponibles dans le covoiturage
+            $updateCov = $pdo->prepare("UPDATE covoiturage SET place_dispo = place_dispo + ? WHERE id_cov = ?");
+            $updateCov->execute([$nbPlaces, $idCovoiturage]);
+        
             // Mettre la demande à 'Acceptée'
             $update = $pdo->prepare("UPDATE demandes_suppression SET statut = 'Acceptée' WHERE id = ?");
             $update->execute([$id_demande]);
+        
+        
         } elseif ($action === 'refuser') {
             // Juste changer le statut à 'Refusée'
             $update = $pdo->prepare("UPDATE demandes_suppression SET statut = 'Refusée' WHERE id = ?");

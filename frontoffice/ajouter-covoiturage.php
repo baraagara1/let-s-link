@@ -46,6 +46,16 @@ input.invalid {
 <body>
 
 <?php
+
+session_start();
+
+// ✅ Vérification que l'utilisateur est connecté
+if (!isset($_SESSION['utilisateur_id'])) {
+    header("Location: login.php");
+    exit;
+}
+
+$idUtilisateurConnecte = $_SESSION['utilisateur_id'];
 $currentPage = basename($_SERVER['PHP_SELF']);
 $errors = [];
 
@@ -57,45 +67,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         die("Connexion échouée : " . $e->getMessage());
     }
 
+    // Récupération des données
     $destination = trim($_POST['destination']);
     $date = $_POST['date'];
     $places = $_POST['place_dispo'];
-    $id_utilisateur = $_POST['id_utilisateur'];
     $prix_c = $_POST['prix_c'];
+    $heure_depart = $_POST['heure_depart'];
+
+    // ✅ On utilise uniquement l'ID de la session (ne jamais faire confiance à l'input hidden)
+    $id_utilisateur = $idUtilisateurConnecte;
+
+    $errors = [
+        'destination' => '',
+        'date' => '',
+        'places' => '',
+        'prix_c' => '',
+        'heure_depart' => '',
+    ];
 
     if (!is_numeric($prix_c) || $prix_c < 0) {
-        $errors[] = "Le prix doit être un nombre positif.";
+        $errors['prix_c'] = "Le prix doit être un nombre positif.";
     }
-    
+
     if (!preg_match("/^[a-zA-Z\s]+$/", $destination)) {
-        $errors[] = "La destination ne doit contenir que des lettres et des espaces.";
+        $errors['destination'] = "La destination ne doit contenir que des lettres et des espaces.";
     }
 
     $today = date('Y-m-d');
     if ($date < $today) {
-        $errors[] = "La date doit être aujourd'hui ou une date future.";
+        $errors['date'] = "La date doit être aujourd'hui ou une date future.";
     }
 
     if (!is_numeric($places) || $places < 1 || $places > 4) {
-        $errors[] = "Le nombre de places doit être entre 1 et 4.";
+        $errors['places'] = "Le nombre de places doit être entre 1 et 4.";
     }
 
-    if (!preg_match("/^\d{6}$/", $id_utilisateur)) {
-        $errors[] = "L'ID utilisateur doit contenir exactement 6 chiffres.";
-    }
-
-    if (empty($errors)) {
-        $sql = "INSERT INTO covoiturage (destination, date, place_dispo, id_utilisateur, prix_c) VALUES (?, ?, ?, ?, ?)";
+    if (empty(array_filter($errors))) {
+        $sql = "INSERT INTO covoiturage (destination, date, place_dispo, id_utilisateur, prix_c, heure_depart)
+                VALUES (?, ?, ?, ?, ?, ?)";
         $stmt = $pdo->prepare($sql);
-        if ($stmt->execute([$destination, $date, $places, $id_utilisateur, $prix_c])) {
+        if ($stmt->execute([$destination, $date, $places, $id_utilisateur, $prix_c, $heure_depart])) {
             header("Location: ajouter-covoiturage.php?success=1");
             exit();
         } else {
-            $errors[] = "Erreur lors de l'ajout du covoiturage.";
+            $errors['destination'] = "Erreur lors de l'ajout du covoiturage.";
         }
     }
-    
-    
 }
 ?>
 
@@ -155,12 +172,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="alert alert-success text-center">Covoiturage ajouté avec succès !</div>
                 <?php endif; ?>
 
-                <?php if (!empty($errors)): ?>
-                    <div class="alert alert-danger">
-                        <ul class="mb-0"><?php foreach ($errors as $error): ?><li><?= $error ?></li><?php endforeach; ?></ul>
-                    </div>
-                <?php endif; ?>
-
                 <form action="ajouter-covoiturage.php" method="POST" class="row g-3" autocomplete="off">
                     <div class="col-md-6">
                         <label for="destination" class="form-label">Destination</label>
@@ -168,6 +179,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <span class="input-group-text"><i class="fas fa-map-marker-alt"></i></span>
                             <input type="text" name="destination" class="form-control" value="<?= isset($destination) ? htmlspecialchars($destination) : '' ?>">
                         </div>
+                        <?php if (!empty($errors['destination'])): ?>
+                            <small class="text-danger"><?= $errors['destination'] ?></small>
+                        <?php endif; ?>
                     </div>
 
                     <div class="col-md-6">
@@ -176,7 +190,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                             <input type="date" name="date" class="form-control" value="<?= isset($date) ? htmlspecialchars($date) : '' ?>">
                         </div>
+                        <?php if (!empty($errors['date'])): ?>
+                            <small class="text-danger"><?= $errors['date'] ?></small>
+                        <?php endif; ?>
                     </div>
+
+
+                    <!-- 🚨 Cette ligne force un retour à la ligne -->
+
 
                     <div class="col-md-6">
                         <label for="place_dispo" class="form-label">Places Disponibles</label>
@@ -184,25 +205,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <span class="input-group-text"><i class="fas fa-users"></i></span>
                             <input type="text" name="place_dispo" class="form-control" value="<?= isset($places) ? htmlspecialchars($places) : '' ?>">
                         </div>
+                        <?php if (!empty($errors['places'])): ?>
+                            <small class="text-danger"><?= $errors['places'] ?></small>
+                        <?php endif; ?>
                     </div>
 
+                    <!-- 🚨 Cette ligne force un retour à la ligne -->
+
+                   
                     <div class="col-md-6">
+    <label for="heure_depart" class="form-label">Heure de départ</label>
+    <div class="input-group">
+        <span class="input-group-text"><i class="fas fa-clock"></i></span>
+        <input type="time" name="heure_depart" class="form-control" value="<?= isset($heure_depart) ? htmlspecialchars($heure_depart) : '' ?>">
+    </div>
+    <?php if (!empty($errors['heure_depart'])): ?>
+        <small class="text-danger"><?= $errors['heure_depart'] ?></small>
+    <?php endif; ?>
+</div>
+
+                    
+
+                  
+
+
+
+<div class="col-md-6">
                         <label for="prix_c" class="form-label">Prix (DT)</label>
                         <div class="input-group">
                             <span class="input-group-text">DT</span>
                             <input type="text" name="prix_c" class="form-control" value="<?= isset($prix_c) ? htmlspecialchars($prix_c) : '' ?>">
                         </div>
+                        <?php if (!empty($errors['prix_c'])): ?>
+                            <small class="text-danger"><?= $errors['prix_c'] ?></small>
+                        <?php endif; ?>
                     </div>
 
-                    <div class="col-12 d-flex justify-content-center">
-    <div class="col-md-6">
-        <label for="id_utilisateur" class="form-label text-center w-100">ID Utilisateur</label>
-        <div class="input-group">
-            <span class="input-group-text"><i class="fas fa-id-badge"></i></span>
-            <input type="text" name="id_utilisateur" class="form-control" value="<?= isset($id_utilisateur) ? htmlspecialchars($id_utilisateur) : '' ?>">
-        </div>
-    </div>
-</div>
+
+
+
+
+
+                    <input type="hidden" name="id_utilisateur" value="<?= $_SESSION['utilisateur_id'] ?>">
+
 
 
                     <div class="col-12 text-center mt-3">
@@ -305,7 +350,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const destination = document.querySelector('input[name="destination"]');
     const date = document.querySelector('input[name="date"]');
     const places = document.querySelector('input[name="place_dispo"]');
-    const id_utilisateur = document.querySelector('input[name="id_utilisateur"]');
 
     // Contrôle à la volée
     destination.addEventListener('input', () => {
@@ -323,9 +367,7 @@ document.addEventListener('DOMContentLoaded', function () {
         toggleValidation(places, val >= 1 && val <= 4);
     });
 
-    id_utilisateur.addEventListener('input', () => {
-        toggleValidation(id_utilisateur, /^\d{6}$/.test(id_utilisateur.value));
-    });
+    
 
     function toggleValidation(input, isValid) {
         input.classList.remove('valid', 'invalid');

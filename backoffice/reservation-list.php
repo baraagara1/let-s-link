@@ -18,6 +18,14 @@ try {
     // Compter les demandes de suppression en attente
     $stmtDemandes = $pdo->query("SELECT COUNT(*) FROM demandes_suppression WHERE statut = 'En attente'");
     $nbDemandesSuppression = $stmtDemandes->fetchColumn();
+    $editReservation = null;
+if (isset($_GET['edit_res'])) {
+    $idToEdit = intval($_GET['edit_res']);
+    $stmtEdit = $pdo->prepare("SELECT * FROM reservations WHERE id_res = ?");
+    $stmtEdit->execute([$idToEdit]);
+    $editReservation = $stmtEdit->fetch(PDO::FETCH_ASSOC);
+}
+
 
 } catch (PDOException $e) {
     die("Erreur de connexion : " . $e->getMessage());
@@ -120,6 +128,59 @@ try {
 
       <!-- MAIN CONTENT -->
       <div class="container-fluid">
+
+      <?php if ($editReservation): ?>
+  <div class="modal show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.4); z-index: 1050;">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="POST" action="modif-reservation.php">
+          <div class="modal-header">
+            <h5 class="modal-title">Modifier la Réservation</h5>
+            <a href="reservation-list.php" class="btn-close"></a>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" name="id_res" value="<?= $editReservation['id_res'] ?>">
+            
+            <div class="mb-3">
+              <label class="form-label">ID Utilisateur</label>
+              <input type="text" name="utilisateur_id" class="form-control" value="<?= htmlspecialchars($editReservation['utilisateur_id']) ?>">
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Nombre de places</label>
+              <input type="number" name="nb_place_res" class="form-control" value="<?= htmlspecialchars($editReservation['nb_place_res']) ?>">
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Moyen de paiement</label>
+              <select name="moyen_paiement" class="form-select">
+                <option <?= $editReservation['moyen_paiement'] === 'Espèces' ? 'selected' : '' ?>>Espèces</option>
+                <option <?= $editReservation['moyen_paiement'] === 'Carte Bancaire' ? 'selected' : '' ?>>Carte Bancaire</option>
+                <option <?= $editReservation['moyen_paiement'] === 'Virement' ? 'selected' : '' ?>>Virement</option>
+              </select>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Statut</label>
+              <select name="status" class="form-select">
+                <option <?= $editReservation['status'] === 'En attente' ? 'selected' : '' ?>>En attente</option>
+                <option <?= $editReservation['status'] === 'Acceptée' ? 'selected' : '' ?>>Acceptée</option>
+                <option <?= $editReservation['status'] === 'Refusée' ? 'selected' : '' ?>>Refusée</option>
+                <option <?= $editReservation['status'] === 'Annulée' ? 'selected' : '' ?>>Annulée</option>
+              </select>
+            </div>
+
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-success">Enregistrer</button>
+            <a href="reservation-list.php" class="btn btn-secondary">Annuler</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+<?php endif; ?>
+
         <div class="d-sm-flex align-items-center justify-content-between mb-4">
           <h1 class="h3 mb-0 text-gray-800">Liste des Réservations</h1>
         </div>
@@ -155,7 +216,7 @@ try {
                       echo "<td>" . htmlspecialchars($row['status']) . "</td>";
                       echo "<td>" . htmlspecialchars($row['nb_place_res']) . "</td>";
                       echo "<td class='text-center'>
-                      <a href='lister-covoiturages.php?edit_res=" . $row['id_res'] . "' class='btn btn-sm btn-primary me-1'>
+                      <a href='reservation-list.php?edit_res=" . $row['id_res'] . "' class='btn btn-sm btn-primary me-1'>
                         <i class='fas fa-edit'></i>
                       </a>
                       <a href='supprimer-reservation.php?id=" . $row['id_res'] . "' class='btn btn-sm btn-danger' onclick=\"return confirm('Êtes-vous sûr de vouloir supprimer cette réservation ?');\">

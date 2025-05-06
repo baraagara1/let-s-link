@@ -1,34 +1,62 @@
 <?php
+session_start();
+
+// ✅ Vérifie que l'utilisateur est connecté
+if (!isset($_SESSION['utilisateur_id'])) {
+    header("Location: login.php");
+    exit;
+}
+
+// ✅ ID de l'utilisateur connecté
+$idUtilisateurConnecte = $_SESSION['utilisateur_id'];
+echo "DEBUG ID connecté : " . $idUtilisateurConnecte;
+
 try {
     $pdo = new PDO("mysql:host=localhost;dbname=covoiturage_db;charset=utf8", "root", "");
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Définir le nombre d'éléments par page
-    $parPage = 6;
+    // ✅ Activer le partage si le bouton est cliqué
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['demarrer_partage'])) {
+        $idCov = intval($_POST['demarrer_partage']);
 
-    // Déterminer la page actuelle
+        // ✅ Vérifie si le covoiturage appartient à l'utilisateur connecté
+        $checkStmt = $pdo->prepare("SELECT id_utilisateur FROM covoiturage WHERE id_cov = ?");
+        $checkStmt->execute([$idCov]);
+        $owner = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($owner && $owner['id_utilisateur'] == $idUtilisateurConnecte) {
+            $stmt = $pdo->prepare("UPDATE covoiturage SET partage_actif = 1 WHERE id_cov = ?");
+            $stmt->execute([$idCov]);
+        }
+
+        header("Location: lister-covoiturages.php");
+        exit;
+    }
+
+    // ✅ Pagination
+    $parPage = 6;
     $page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int)$_GET['page'] : 1;
     if ($page <= 0) $page = 1;
-
-    // Calculer le point de départ
     $start = ($page - 1) * $parPage;
 
-    // Compter le nombre total de covoiturages
+    // ✅ Compter les covoiturages à venir
     $countStmt = $pdo->query("SELECT COUNT(*) FROM covoiturage WHERE date >= CURDATE()");
     $totalCovoiturages = (int) $countStmt->fetchColumn();
-
-    // Calculer le nombre total de pages
     $totalPages = ceil($totalCovoiturages / $parPage);
 
-    // Récupérer les covoiturages pour la page actuelle
+    // ✅ Récupérer les covoiturages
     $stmt = $pdo->prepare("SELECT * FROM covoiturage WHERE date >= CURDATE() ORDER BY date ASC LIMIT :start, :parpage");
     $stmt->bindValue(':start', $start, PDO::PARAM_INT);
     $stmt->bindValue(':parpage', $parPage, PDO::PARAM_INT);
     $stmt->execute();
     $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Récupérer toutes les réservations
-    $reservationsStmt = $pdo->query("SELECT r.*, c.destination FROM reservations r JOIN covoiturage c ON r.covoiturage_id = c.id_cov");
+    // ✅ Récupérer toutes les réservations
+    $reservationsStmt = $pdo->query("
+        SELECT r.*, c.destination 
+        FROM reservations r 
+        JOIN covoiturage c ON r.covoiturage_id = c.id_cov
+    ");
     $reservations = $reservationsStmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
@@ -38,8 +66,20 @@ try {
 
 
 <!DOCTYPE html>
+
 <html lang="fr">
 <head>
+
+<script>
+// Variable globale pour suivre si l'API est chargée
+let googleMapsLoaded = false;
+
+function initMap() {
+  googleMapsLoaded = true;
+  console.log("Google Maps API est prête");
+}
+</script>
+
   <meta charset="UTF-8">
   <title>Liste des Covoiturages</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -48,129 +88,146 @@ try {
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <style>
 
-
-
-/* Fond sombre flouté */
+/\* Fond sombre flouté \*/
 .overlay-flou {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  backdrop-filter: blur(6px);
-  background-color: rgba(0, 0, 0, 0.2);
-  z-index: 998;
+position: fixed;
+top: 0;
+left: 0;
+width: 100%;
+height: 100%;
+backdrop-filter: blur(6px);
+background-color: rgba(0, 0, 0, 0.2);
+z-index: 998;
 }
 
-/* Formulaire au-dessus du fond flouté */
+/\* Formulaire au-dessus du fond flouté \*/
 .popup-form {
-  position: fixed;
-  top: 140px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 90%;
-  max-width: 500px;
-  max-height: 80vh;
-  overflow-y: auto;
-  padding: 40px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 0 30px rgba(0, 0, 0, 0.3);
-  z-index: 999;
-  animation: fadeIn 0.3s ease;
-  scrollbar-width: thin;
+position: fixed;
+top: 140px;
+left: 50%;
+transform: translateX(-50%);
+width: 90%;
+max-width: 500px;
+max-height: 80vh;
+overflow-y: auto;
+padding: 40px;
+background: white;
+border-radius: 12px;
+box-shadow: 0 0 30px rgba(0, 0, 0, 0.3);
+z-index: 999;
+animation: fadeIn 0.3s ease;
+scrollbar-width: thin;
 scrollbar-color: #888 #f1f1f1;
 
 }
 
 
-    .card { transition: transform 0.3s ease, box-shadow 0.3s ease; }
-    .card:hover { transform: translateY(-5px); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2); }
-    .card-title i { color: #4e73df; }
-    .btn-modifier { background-color: #1cc88a; color: white; }
-    .btn-supprimer { background-color: #e74a3b; color: white; }
-    .btn-reserver { background-color: #f6c23e; color: white; }
-    .card-body p i { width: 20px; }
+.card { transition: transform 0.3s ease, box-shadow 0.3s ease; }
+.card:hover { transform: translateY(-5px); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2); }
+.card-title i { color: #4e73df; }
+.btn-modifier { background-color: #1cc88a; color: white; }
+.btn-supprimer { background-color: #e74a3b; color: white; }
+.btn-reserver { background-color: #f6c23e; color: white; }
+.card-body p i { width: 20px; }
 
 
-    .form-modifier {
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
-  margin-top: 40px;
-  overflow: hidden;
+.form-modifier {
+
+
+background: #fff;
+border-radius: 8px;
+box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+margin-top: 40px;
+overflow: hidden;
 }
 
 .form-modifier-header {
-  background-color: #198754;
-  color: #fff;
-  padding: 16px 24px;
-  font-size: 1.25rem;
-  font-weight: bold;
-  display: flex;
-  align-items: center;
-  gap: 10px;
+background-color: #198754;
+color: #fff;
+padding: 16px 24px;
+font-size: 1.25rem;
+font-weight: bold;
+display: flex;
+align-items: center;
+gap: 10px;
 }
 
 .form-modifier-body {
-  padding: 30px;
+padding: 30px;
 }
 
 .form-modifier .form-control {
-  border-radius: 6px;
-  box-shadow: none;
+border-radius: 6px;
+box-shadow: none;
 }
 
 .btn-enregistrer {
-  background-color: #198754;
-  color: #fff;
-  font-weight: bold;
+background-color: #198754;
+color: #fff;
+font-weight: bold;
 }
 body {
-    background: linear-gradient(135deg, #f1f2f6, #dff9fb);
+background: linear-gradient(135deg, #f1f2f6, #dff9fb);
 }
 
 .form-animate {
-  animation: fadeInUp 0.8s ease-in-out;
+animation: fadeInUp 0.8s ease-in-out;
 }
 
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(40px); }
-  to { opacity: 1; transform: translateY(0); }
+from { opacity: 0; transform: translateY(40px); }
+to { opacity: 1; transform: translateY(0); }
 }
 
-
 .card-animate {
-  opacity: 0;
-  transform: translateY(40px);
-  animation: fadeInUpCard 0.6s ease forwards;
+opacity: 0;
+transform: translateY(40px);
+animation: fadeInUpCard 0.6s ease forwards;
 }
 
 @keyframes fadeInUpCard {
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+to {
+opacity: 1;
+transform: translateY(0);
+}
 }
 
-
 .pagination .page-link {
-  border-radius: 8px;
-  margin: 0 4px;
-  color: #1b0068;
-  font-weight: 500;
-  transition: 0.3s;
+border-radius: 8px;
+margin: 0 4px;
+color: #1b0068;
+font-weight: 500;
+transition: 0.3s;
 }
 
 .pagination .page-item.active .page-link {
-  background-color: #1b0068;
-  color: white;
-  border: none;
+background-color: #1b0068;
+color: white;
+border: none;
 }
 
-.pagination .page-link:hover {
-  background-color: #e0e0f8;
+.pagination .page-link\:hover {
+background-color: #e0e0f8;
 }
+
+
+.heure-arrivee-box {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  padding: 8px 15px;
+  border-radius: 8px;
+  font-weight: 500;
+  color: #333;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+..progress-bar {
+  transition: width 0.5s ease-in-out;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 
 
   </style>
@@ -188,6 +245,7 @@ if (isset($_GET['edit_res'])) {
 <body>
 
 <?php if ($editResData): ?>
+
   <style>
     .overlay-flou {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -220,57 +278,66 @@ if (isset($_GET['edit_res'])) {
     <a href="lister-covoiturages.php" class="btn-close-custom">&times;</a>
     <h3 class="text-center mb-4"><i class="fas fa-edit me-2"></i>Modifier une réservation</h3>
 
-    <form method="POST" action="traiter-modif-reservation.php">
-      <input type="hidden" name="id_res" value="<?= $editResData['id_res'] ?>">
 
-      <div class="mb-3">
-        <label class="form-label">ID Utilisateur</label>
-        <input type="text" name="utilisateur_id" class="form-control" value="<?= htmlspecialchars($editResData['utilisateur_id']) ?>">
-      </div>
+<form method="POST" action="traiter-modif-reservation.php">
+  <input type="hidden" name="id_res" value="<?= $editResData['id_res'] ?>">
 
-      <div class="mb-3">
-        <label class="form-label">Nombre de places</label>
-        <input type="number" name="nb_place_res" class="form-control" value="<?= htmlspecialchars($editResData['nb_place_res']) ?>">
+  <div class="mb-3">
+    <label class="form-label">ID Utilisateur</label>
+    <input type="text" name="utilisateur_id" class="form-control" value="<?= htmlspecialchars($editResData['utilisateur_id']) ?>">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Nombre de places</label>
+    <input type="number" name="nb_place_res" class="form-control" value="<?= htmlspecialchars($editResData['nb_place_res']) ?>">
+
+
 <?php if (isset($_GET['erreur_places'])): ?>
+
   <div style="color:red; font-size: 0.9rem; margin-top: 5px;">
     ❌ Le nombre de places demandé dépasse la disponibilité.
   </div>
 <?php endif; ?>
       </div>
 
-      <div class="mb-3">
-        <label class="form-label">Moyen de paiement</label>
-        <select name="moyen_paiement" class="form-select">
-          <option <?= $editResData['moyen_paiement'] === 'Espèces' ? 'selected' : '' ?>>Espèces</option>
-          <option <?= $editResData['moyen_paiement'] === 'Carte Bancaire' ? 'selected' : '' ?>>Carte Bancaire</option>
-          <option <?= $editResData['moyen_paiement'] === 'Virement' ? 'selected' : '' ?>>Virement</option>
-        </select>
-      </div>
 
-      <div class="mb-3">
-        <label class="form-label">Statut</label>
-        <select name="status" class="form-select">
-          <option <?= $editResData['status'] === 'En attente' ? 'selected' : '' ?>>En attente</option>
-          <option <?= $editResData['status'] === 'Acceptée' ? 'selected' : '' ?>>Acceptée</option>
-          <option <?= $editResData['status'] === 'Refusée' ? 'selected' : '' ?>>Refusée</option>
-          <option <?= $editResData['status'] === 'Annulée' ? 'selected' : '' ?>>Annulée</option>
-        </select>
-      </div>
+  <div class="mb-3">
+    <label class="form-label">Moyen de paiement</label>
+    <select name="moyen_paiement" class="form-select">
+      <option <?= $editResData['moyen_paiement'] === 'Espèces' ? 'selected' : '' ?>>Espèces</option>
+      <option <?= $editResData['moyen_paiement'] === 'Carte Bancaire' ? 'selected' : '' ?>>Carte Bancaire</option>
+      <option <?= $editResData['moyen_paiement'] === 'Virement' ? 'selected' : '' ?>>Virement</option>
+    </select>
+  </div>
 
-      <div class="text-center mt-4">
-        <button type="submit" class="btn btn-success">Enregistrer</button>
-      </div>
-    </form>
+  <div class="mb-3">
+    <label class="form-label">Statut</label>
+    <select name="status" class="form-select">
+      <option <?= $editResData['status'] === 'En attente' ? 'selected' : '' ?>>En attente</option>
+      <option <?= $editResData['status'] === 'Acceptée' ? 'selected' : '' ?>>Acceptée</option>
+      <option <?= $editResData['status'] === 'Refusée' ? 'selected' : '' ?>>Refusée</option>
+      <option <?= $editResData['status'] === 'Annulée' ? 'selected' : '' ?>>Annulée</option>
+    </select>
+  </div>
+
+  <div class="text-center mt-4">
+    <button type="submit" class="btn btn-success">Enregistrer</button>
+  </div>
+</form>
+
+
   </div>
 <?php endif; ?>
 
 <?php if (isset($_GET['deleted']) && $_GET['deleted'] == 1): ?>
+
   <div class="alert alert-success text-center mt-3">
     ✅ Covoiturage supprimé avec succès.
   </div>
 <?php endif; ?>
 
 <?php if (isset($_GET['reserver'])): ?>
+
   <?php if (isset($_GET['edit_res'])): 
     $id_res = intval($_GET['edit_res']);
     $stmt = $pdo->prepare("SELECT * FROM reservations WHERE id_res = ?");
@@ -278,6 +345,7 @@ if (isset($_GET['edit_res'])) {
     $resEdit = $stmt->fetch(PDO::FETCH_ASSOC);
     if ($resEdit):
 ?>
+
 <style>
   .overlay-flou { position: fixed; top: 0; left: 0; width: 100%; height: 100%; backdrop-filter: blur(6px); background-color: rgba(0, 0, 0, 0.2); z-index: 998; }
   .popup-form {
@@ -314,33 +382,36 @@ if (isset($_GET['edit_res'])) {
   <form method="POST" action="modifier-reservation.php">
     <input type="hidden" name="id_res" value="<?= $resEdit['id_res'] ?>">
 
-    <div class="mb-3">
-      <label for="utilisateur_id" class="form-label">ID Utilisateur</label>
-      <input type="text" class="form-control" name="utilisateur_id" value="<?= htmlspecialchars($resEdit['utilisateur_id']) ?>">
-    </div>
 
-    <div class="mb-3">
-      <label for="nb_place_res" class="form-label">Nombre de places</label>
-      <input type="text" class="form-control" name="nb_place_res" value="<?= htmlspecialchars($resEdit['nb_place_res']) ?>">
-    </div>
+<div class="mb-3">
+  <label for="utilisateur_id" class="form-label">ID Utilisateur</label>
+  <input type="text" class="form-control" name="utilisateur_id" value="<?= htmlspecialchars($resEdit['utilisateur_id']) ?>">
+</div>
 
-    <div class="mb-3">
-      <label for="moyen_paiement" class="form-label">Moyen de paiement</label>
-      <select name="moyen_paiement" class="form-select">
-        <option value="Espèces" <?= $resEdit['moyen_paiement'] == 'Espèces' ? 'selected' : '' ?>>Espèces</option>
-        <option value="Carte Bancaire" <?= $resEdit['moyen_paiement'] == 'Carte Bancaire' ? 'selected' : '' ?>>Carte Bancaire</option>
-        <option value="Virement" <?= $resEdit['moyen_paiement'] == 'Virement' ? 'selected' : '' ?>>Virement</option>
-      </select>
-    </div>
+<div class="mb-3">
+  <label for="nb_place_res" class="form-label">Nombre de places</label>
+  <input type="text" class="form-control" name="nb_place_res" value="<?= htmlspecialchars($resEdit['nb_place_res']) ?>">
+</div>
 
-    <div class="mb-3">
-      <label for="status" class="form-label">Statut</label>
-      <input type="text" class="form-control" name="status" value="<?= htmlspecialchars($resEdit['status']) ?>">
-    </div>
+<div class="mb-3">
+  <label for="moyen_paiement" class="form-label">Moyen de paiement</label>
+  <select name="moyen_paiement" class="form-select">
+    <option value="Espèces" <?= $resEdit['moyen_paiement'] == 'Espèces' ? 'selected' : '' ?>>Espèces</option>
+    <option value="Carte Bancaire" <?= $resEdit['moyen_paiement'] == 'Carte Bancaire' ? 'selected' : '' ?>>Carte Bancaire</option>
+    <option value="Virement" <?= $resEdit['moyen_paiement'] == 'Virement' ? 'selected' : '' ?>>Virement</option>
+  </select>
+</div>
 
-    <div class="text-center mt-4">
-      <button type="submit" class="btn btn-success btn-lg">Enregistrer</button>
-    </div>
+<div class="mb-3">
+  <label for="status" class="form-label">Statut</label>
+  <input type="text" class="form-control" name="status" value="<?= htmlspecialchars($resEdit['status']) ?>">
+</div>
+
+<div class="text-center mt-4">
+  <button type="submit" class="btn btn-success btn-lg">Enregistrer</button>
+</div>
+```
+
   </form>
 </div>
 <?php endif; endif; ?>
@@ -398,47 +469,55 @@ if (isset($_GET['edit_res'])) {
   <h3 class="text-center mb-4"><i class="fas fa-car-side me-2"></i>Réserver un trajet</h3>
 
   <?php if (isset($_GET['erreur']) && $_GET['erreur'] === 'plein'): ?>
-    <div class="alert alert-danger text-center">
-      ❌ Ce covoiturage est complet ou le nombre de places demandées dépasse la disponibilité.
-    </div>
+
+```
+<div class="alert alert-danger text-center">
+  ❌ Ce covoiturage est complet ou le nombre de places demandées dépasse la disponibilité.
+</div>
+```
+
   <?php endif; ?>
 
   <form method="POST" action="traiter-reservation.php">
     <input type="hidden" name="covoiturage_id" value="<?= intval($_GET['reserver']) ?>">
 
-    <div class="mb-3">
-      <label for="utilisateur_id" class="form-label">ID Utilisateur</label>
-      <input type="text" class="form-control" name="utilisateur_id">
-    </div>
+```
+<div class="mb-3">
+  <label for="utilisateur_id" class="form-label">ID Utilisateur</label>
+  <input type="text" class="form-control" name="utilisateur_id">
+</div>
 
-    <div class="mb-3">
-      <label for="nb_place_res" class="form-label">Nombre de places à réserver</label>
-      <input type="text" class="form-control" name="nb_place_res" value="1">
-    </div>
+<div class="mb-3">
+  <label for="nb_place_res" class="form-label">Nombre de places à réserver</label>
+  <input type="text" class="form-control" name="nb_place_res" value="1">
+</div>
 
-    <div class="mb-3">
-      <label for="moyen_paiement" class="form-label">Moyen de paiement</label>
-      <select name="moyen_paiement" class="form-select">
-        <option value="">-- Choisir --</option>
-        <option value="Espèces">Espèces</option>
-        <option value="Carte Bancaire">Carte Bancaire</option>
-        <option value="Virement">Virement</option>
-      </select>
-    </div>
+<div class="mb-3">
+  <label for="moyen_paiement" class="form-label">Moyen de paiement</label>
+  <select name="moyen_paiement" class="form-select">
+    <option value="">-- Choisir --</option>
+    <option value="Espèces">Espèces</option>
+    <option value="Carte Bancaire">Carte Bancaire</option>
+    <option value="Virement">Virement</option>
+  </select>
+</div>
 
-    <div class="mb-3">
-      <label for="status" class="form-label">Statut</label>
-      <input type="text" class="form-control" name="status" value="En attente">
-    </div>
+<div class="mb-3">
+  <label for="status" class="form-label">Statut</label>
+  <input type="text" class="form-control" name="status" value="En attente">
+</div>
 
-    <div class="text-center mt-4">
-      <button type="submit" class="btn btn-success btn-lg">Valider</button>
-    </div>
+<div class="text-center mt-4">
+  <button type="submit" class="btn btn-success btn-lg">Valider</button>
+</div>
+```
+
   </form>
 </div>
 <?php endif; ?>
 
 <!-- Topbar -->
+
 <div class="container-fluid bg-dark text-light px-0 py-2">
   <div class="row gx-0 d-none d-lg-flex">
     <div class="col-lg-7 px-5 text-start">
@@ -456,6 +535,7 @@ if (isset($_GET['edit_res'])) {
 </div>
 
 <!-- Navbar -->
+
 <nav class="navbar navbar-expand-lg bg-white navbar-light sticky-top p-0">
   <a href="index.html" class="navbar-brand d-flex align-items-center px-4 px-lg-5">
     <img src="logo.png" alt="logo" style="width:140px;">
@@ -478,46 +558,51 @@ if (isset($_GET['edit_res'])) {
   </div>
 </nav>
 
-
-
-
-
-
-
 <!-- Liste des covoiturages -->
+
 <div class="container py-5 form-animate">
 
-  
-  
 <h1 class="text-center mb-5"><i class="fas fa-list me-2"></i>Liste des covoiturages</h1>
+
+<!-- Carte qui s'affichera dynamiquement -->
+
+<div id="map-ma-position" style="height: 300px; width: 100%; display: none;" class="mt-4"></div>
+
   <div class="row">
   <?php 
 $delay = 0; // Effet cascade
 
 foreach ($result as $row):
   $places = (int)$row['place_dispo'];
+   
+
+  
 ?>
+
   <div class="col-md-6 col-lg-4 mb-4">
     <div class="card shadow-sm card-animate" style="animation-delay: <?= $delay ?>s;">
 
-      <!-- Bouton Voir les réservations -->
-      <div class="mt-3">
-        <button class="btn btn-outline-info btn-sm w-100 toggle-res" data-id="<?= $row['id_cov'] ?>">
-          <i class="fas fa-eye me-1"></i> Voir les réservations
-        </button>
+```
+  <!-- Bouton Voir les réservations -->
+  <div class="mt-3">
+    <button class="btn btn-outline-info btn-sm w-100 toggle-res" data-id="<?= $row['id_cov'] ?>">
+      <i class="fas fa-eye me-1"></i> Voir les réservations
+    </button>
 
-        <div class="reservations-list mt-3" id="res-list-<?= $row['id_cov'] ?>" style="display:none;">
-          <?php
-          $hasRes = false;
-          foreach ($reservations as $res) {
-            if ($res['covoiturage_id'] == $row['id_cov']) {
-              $hasRes = true;
-              echo '<div class="bg-white border rounded p-3 mb-3 shadow-sm">';
+    <div class="reservations-list mt-3" id="res-list-<?= $row['id_cov'] ?>" style="display:none;">
+      <?php
+      $hasRes = false;
+      foreach ($reservations as $res) {
+        if ($res['covoiturage_id'] == $row['id_cov']) {
+          $hasRes = true;
+          echo '<div class="bg-white border rounded p-3 mb-3 shadow-sm">';
+
 
 echo '<div class="d-flex justify-content-between align-items-center bg-white border rounded p-2 mb-2 shadow-sm">';
 echo '<div class="d-flex align-items-center"><i class="fas fa-user me-2 text-dark"></i>';
 echo '<div>';
-echo '<div><strong>Utilisateur :</strong> ' . htmlspecialchars($res["utilisateur_id"]) . '</div>';
+echo '<div><strong>' . $res["nb_place_res"] . ' place(s)</strong> - ' . htmlspecialchars($res["moyen_paiement"]) . '</div>';
+
 echo '<div><strong>' . $res["nb_place_res"] . ' place(s)</strong> - ' . htmlspecialchars($res["moyen_paiement"]) . '</div>';
 echo '</div></div>';
 
@@ -529,18 +614,18 @@ $dateRes = new DateTime($row['date'] . ' 00:00:00');
 $now = new DateTime();
 $hoursLeft = ($dateRes > $now) ? ($dateRes->getTimestamp() - $now->getTimestamp()) / 3600 : 0;
 
+
 echo '<div class="d-flex justify-content-end gap-2">';
 
 if ($hoursLeft < 24) {
-    echo '<a href="notifier-admin.php?id_res=' . $res['id_res'] . '&id_user=' . $res['utilisateur_id'] . '" class="btn btn-danger btn-sm" title="Notifier Admin">';
-    echo '<i class="fas fa-bell"></i>';
-    echo '</a>';
-  } else {
-    echo '<a href="supprimer-reservation.php?id=' . $res['id_res'] . '" class="btn btn-outline-danger btn-sm" title="Supprimer">';
-    echo '<i class="fas fa-trash"></i>';
-    echo '</a>';
+echo '<a href="notifier-admin.php?id_res=' . $res['id_res'] . '&id_user=' . $res['utilisateur_id'] . '" class="btn btn-danger btn-sm" title="Notifier Admin">';
+echo '<i class="fas fa-bell"></i>';
+echo '</a>';
+} else {
+echo '<a href="supprimer-reservation.php?id=' . $res['id_res'] . '" class="btn btn-outline-danger btn-sm" title="Supprimer">';
+echo '<i class="fas fa-trash"></i>';
+echo '</a>';
 }
-
 
 // ✅ Bouton Modifier (le crayon) – toujours présent
 echo '<a href="lister-covoiturages.php?edit_res=' . $res['id_res'] . '" class="btn btn-outline-primary btn-sm" title="Modifier">';
@@ -549,84 +634,137 @@ echo '</a>';
 
 echo '</div>';
 
-
-
-
-
-
-
-
 echo '</div>'; // Fin boutons
 echo '</div>'; // Fin text-end
 echo '</div>'; // Fin carte
 
-          }
-          }
-          if (!$hasRes) {
-            echo '<div class="alert alert-light border-start border-4 border-warning mt-3 d-flex align-items-center">';
+      }
+      }
+      if (!$hasRes) {
+        echo '<div class="alert alert-light border-start border-4 border-warning mt-3 d-flex align-items-center">';
+
+
 echo '  <i class="fas fa-info-circle text-warning me-2"></i>';
 echo '  <span class="text-secondary">Aucune réservation trouvée pour ce covoiturage.</span>';
 echo '</div>';
 
-          }
-          ?>
-        </div>
+
+      }
+      ?>
+    </div>
+  </div>
+
+  <!-- Corps de la carte -->
+  <div class="card-body">
+    <h5 class="card-title"><i class="fas fa-map-marker-alt me-2"></i><?= htmlspecialchars($row['destination']) ?></h5>
+    <p class="card-text mb-1"><i class="fas fa-calendar-alt"></i> <?= htmlspecialchars($row['date']) ?></p>
+    <p class="card-text mb-1"><i class="fas fa-clock"></i> <?= htmlspecialchars($row['heure_depart']) ?></p>
+    <p class="card-text mb-1"><i class="fas fa-users"></i> <?= $places ?> place<?= $places > 1 ? 's' : '' ?></p>
+    <p class="card-text mb-1"><i class="fas fa-money-bill-wave"></i> <?= htmlspecialchars($row['prix_c']) ?> DT</p>
+  
+
+
+    <p class="card-text mb-3"><i class="fas fa-id-badge"></i> ID Utilisateur : <?= htmlspecialchars($row['id_utilisateur']) ?></p>
+
+    <a href="?edit_cov=<?= $row['id_cov'] ?>" class="btn btn-modifier btn-sm me-1">
+
+<i class="fas fa-edit"></i> Modifier </a>
+
+
+    <a href="#" class="btn btn-supprimer btn-sm me-1" data-bs-toggle="modal" data-bs-target="#modalConfirmation" data-id="<?= $row['id_cov'] ?>">
+      <i class="fas fa-trash-alt me-1"></i> Supprimer
+    </a>
+
+    <?php if ($places <= 0): ?>
+      <button class="btn btn-secondary btn-sm" disabled>
+        <i class="fas fa-car"></i> Réserver
+      </button>
+    <?php else: ?>
+      <a href="lister-covoiturages.php?reserver=<?= $row['id_cov'] ?>" class="btn btn-warning btn-sm me-1">
+        <i class="fas fa-car"></i> Réserver
+      </a>
+      <?php if ($row['partage_actif'] == 1): ?>
+
+
+<button class="btn btn-info btn-sm"
+ onclick="startGeolocation(<?= $row['id_cov'] ?>, <?= $row['id_utilisateur'] ?>)"> <i class="fas fa-map-marker-alt"></i> Voir sur la carte </button>
+
+<?php else: ?>
+
+  <button class="btn btn-secondary btn-sm" disabled>
+    <i class="fas fa-lock"></i> Partage non démarré
+  </button>
+<?php endif; ?>
+
+<!-- Bouton Démarrer (visible uniquement pour le propriétaire) -->
+<?php if ($row['id_utilisateur'] == $idUtilisateurConnecte): ?>
+  <?php if ($row['partage_actif'] == 0): ?>
+    <form method="post" style="display:inline;">
+      <input type="hidden" name="demarrer_partage" value="<?= $row['id_cov'] ?>">
+      <button class="btn btn-success btn-sm" type="submit">
+        <i class="fa fa-play"></i> Démarrer le partage
+      </button>
+    </form>
+  <?php endif; ?>
+<?php endif; ?>
+
+
+
+
+    <?php endif; ?>
+
+   <!-- Carte cachée + barre durée unique -->
+<div id="map-container-<?= $row['id_cov'] ?>" style="display:none; margin-top:15px;">
+  <div id="map-<?= $row['id_cov'] ?>" style="height:300px; width:100%;"></div>
+
+ <!-- ✅ Bloc à ajouter autour de la barre -->
+ <div id="progress-duree-<?= $row['id_cov'] ?>" style="display:none;">
+    <div class="progress mt-2" style="height: 25px; border-radius: 8px;">
+      <div id="bar-<?= $row['id_cov'] ?>" class="progress-bar text-white fw-bold"
+           role="progressbar" style="width: 0%; background-color: #0d6efd;"
+           aria-valuemin="0" aria-valuemax="100">
       </div>
+    </div>
+  </div>
 
-      <!-- Corps de la carte -->
-      <div class="card-body">
-        <h5 class="card-title"><i class="fas fa-map-marker-alt me-2"></i><?= htmlspecialchars($row['destination']) ?></h5>
-        <p class="card-text mb-1"><i class="fas fa-calendar-alt"></i> <?= htmlspecialchars($row['date']) ?></p>
-        <p class="card-text mb-1"><i class="fas fa-users"></i> <?= $places ?> place<?= $places > 1 ? 's' : '' ?></p>
-        <p class="card-text mb-1"><i class="fas fa-money-bill-wave"></i> <?= htmlspecialchars($row['prix_c']) ?> DT</p>
-        <p class="card-text mb-3"><i class="fas fa-id-badge"></i> ID Utilisateur : <?= htmlspecialchars($row['id_utilisateur']) ?></p>
+  <!-- Texte de durée -->
+  <div class="text-center mt-1">
+    <small id="text-duree-<?= $row['id_cov'] ?>" class="text-muted fst-italic"></small>
+  </div>
 
-        <a href="?edit_cov=<?= $row['id_cov'] ?>" class="btn btn-modifier btn-sm me-1">
-  <i class="fas fa-edit"></i> Modifier
-</a>
+  <!-- Heure d'arrivée estimée -->
+  <div id="heure-arrivee-<?= $row['id_cov'] ?>" class="heure-arrivee-box mt-2" style="display:none;">
+    <i class="fas fa-clock me-2 text-primary"></i>
+    <span id="heure-texte-<?= $row['id_cov'] ?>"></span>
+  </div>
 
-        <a href="#" class="btn btn-supprimer btn-sm me-1" data-bs-toggle="modal" data-bs-target="#modalConfirmation" data-id="<?= $row['id_cov'] ?>">
-          <i class="fas fa-trash-alt me-1"></i> Supprimer
-        </a>
+</div>
 
-        <?php if ($places <= 0): ?>
-          <button class="btn btn-secondary btn-sm" disabled>
-            <i class="fas fa-car"></i> Réserver
-          </button>
-        <?php else: ?>
-          <a href="lister-covoiturages.php?reserver=<?= $row['id_cov'] ?>" class="btn btn-warning btn-sm me-1">
-            <i class="fas fa-car"></i> Réserver
-          </a>
-          <button class="btn btn-info btn-sm" onclick="reserver(<?= $row['id_cov'] ?>)">
-            <i class="fas fa-map-marker-alt"></i> Voir sur la carte
-          </button>
-        <?php endif; ?>
 
-        <!-- Carte cachée -->
-        <div id="map-container-<?= $row['id_cov'] ?>" style="display:none; margin-top:15px;">
-          <div id="map-<?= $row['id_cov'] ?>" style="height:300px; width:100%;"></div>
-        </div>
 
-        <!-- Démarrer géolocalisation si c'est le propriétaire -->
-        <?php if (isset($_SESSION['id_utilisateur']) && $_SESSION['id_utilisateur'] == $row['id_utilisateur']): ?>
-          <script>
-            startGeolocation(<?= $row['id_cov'] ?>);
-          </script>
-        <?php endif; ?>
 
-        <!-- Badge dynamique -->
-        <?php
-          if ($places == 0) {
-              echo '<span class="badge bg-danger mt-3 d-block"><i class="fas fa-times-circle me-1 fa-bounce"></i>Complet</span>';
-          } elseif ($places <= 2) {
-              echo '<span class="badge bg-warning text-dark mt-3 d-block"><i class="fas fa-exclamation-triangle me-1 fa-shake"></i>Presque complet</span>';
-          } else {
-              echo '<span class="badge bg-success mt-3 d-block"><i class="fas fa-check-circle me-1 fa-fade"></i>Disponible</span>';
-          }
-        ?>
-      </div> <!-- fin card-body -->
 
-    </div> <!-- fin card -->
+      
+
+
+
+
+
+    <!-- Badge dynamique -->
+    <?php
+      if ($places == 0) {
+          echo '<span class="badge bg-danger mt-3 d-block"><i class="fas fa-times-circle me-1 fa-bounce"></i>Complet</span>';
+      } elseif ($places <= 2) {
+          echo '<span class="badge bg-warning text-dark mt-3 d-block"><i class="fas fa-exclamation-triangle me-1 fa-shake"></i>Presque complet</span>';
+      } else {
+          echo '<span class="badge bg-success mt-3 d-block"><i class="fas fa-check-circle me-1 fa-fade"></i>Disponible</span>';
+      }
+    ?>
+  </div> <!-- fin card-body -->
+
+</div> <!-- fin card -->
+
+
   </div> <!-- fin colonne -->
 <?php 
   $delay += 0.15;
@@ -636,38 +774,38 @@ endforeach;
 <nav aria-label="Pagination des covoiturages">
   <ul class="pagination justify-content-center mt-4">
 
-    <!-- Précédent avec icône -->
-    <?php if ($page > 1): ?>
-      <li class="page-item">
-        <a class="page-link" href="?page=<?= $page - 1 ?>" aria-label="Précédent">
-          <i class="fas fa-angle-left"></i>
-        </a>
-      </li>
-    <?php endif; ?>
 
-    <!-- Pages numérotées -->
-    <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-      <li class="page-item <?= ($i == $page) ? 'active' : '' ?>">
-        <a class="page-link" href="?page=<?= $i ?>">
-          <?= $i ?>
-        </a>
-      </li>
-    <?php endfor; ?>
 
-    <!-- Suivant avec icône -->
-    <?php if ($page < $totalPages): ?>
-      <li class="page-item">
-        <a class="page-link" href="?page=<?= $page + 1 ?>" aria-label="Suivant">
-          <i class="fas fa-angle-right"></i>
-        </a>
-      </li>
-    <?php endif; ?>
+<!-- Précédent avec icône -->
+<?php if ($page > 1): ?>
+  <li class="page-item">
+    <a class="page-link" href="?page=<?= $page - 1 ?>" aria-label="Précédent">
+      <i class="fas fa-angle-left"></i>
+    </a>
+  </li>
+<?php endif; ?>
+
+<!-- Pages numérotées -->
+<?php for ($i = 1; $i <= $totalPages; $i++): ?>
+  <li class="page-item <?= ($i == $page) ? 'active' : '' ?>">
+    <a class="page-link" href="?page=<?= $i ?>">
+      <?= $i ?>
+    </a>
+  </li>
+<?php endfor; ?>
+
+<!-- Suivant avec icône -->
+<?php if ($page < $totalPages): ?>
+  <li class="page-item">
+    <a class="page-link" href="?page=<?= $page + 1 ?>" aria-label="Suivant">
+      <i class="fas fa-angle-right"></i>
+    </a>
+  </li>
+<?php endif; ?>
+
 
   </ul>
 </nav>
-
-
-
 
   <?php
 if (isset($_GET['edit_cov'])) {
@@ -678,10 +816,13 @@ if (isset($_GET['edit_cov'])) {
   if ($editQuery->rowCount() > 0) {
     $edit = $editQuery->fetch(PDO::FETCH_ASSOC);
 ?>
+
 <!-- Fond flouté -->
+
 <div class="overlay-flou"></div>
 
 <!-- Popup Modification covoiturage -->
+
 <div class="popup-form">
   <a href="lister-covoiturages.php" class="btn-close-custom">&times;</a>
   <h3 class="text-center mb-4"><i class="fas fa-pen-to-square me-2"></i>Modifier le Covoiturage</h3>
@@ -689,12 +830,15 @@ if (isset($_GET['edit_cov'])) {
   <form method="POST" action="modifier-covoiturage.php" class="row g-3">
     <input type="hidden" name="id_cov" value="<?= $edit['id_cov'] ?>">
 
-    <div class="mb-3">
-      <label class="form-label">Destination</label>
-      <input type="text" name="destination" class="form-control" value="<?= htmlspecialchars($edit['destination']) ?>">
-    </div>
 
-    <!-- Destination -->
+<div class="mb-3">
+  <label class="form-label">Destination</label>
+  <input type="text" name="destination" class="form-control" value="<?= htmlspecialchars($edit['destination']) ?>">
+</div>
+
+<!-- Destination -->
+
+
 <div class="mb-3">
   <label class="form-label">Destination</label>
   <input type="text" name="destination" class="form-control" value="<?= htmlspecialchars($_POST['destination'] ?? $edit['destination']) ?>">
@@ -704,6 +848,7 @@ if (isset($_GET['edit_cov'])) {
 </div>
 
 <!-- Date -->
+
 <div class="mb-3">
   <label class="form-label">Date</label>
   <input type="date" name="date" class="form-control" value="<?= htmlspecialchars($_POST['date'] ?? $edit['date']) ?>">
@@ -713,6 +858,7 @@ if (isset($_GET['edit_cov'])) {
 </div>
 
 <!-- Place Dispo -->
+
 <div class="mb-3">
   <label class="form-label">Places disponibles</label>
   <input type="text" name="place_dispo" class="form-control" value="<?= htmlspecialchars($_POST['place_dispo'] ?? $edit['place_dispo']) ?>">
@@ -722,6 +868,7 @@ if (isset($_GET['edit_cov'])) {
 </div>
 
 <!-- Prix -->
+
 <div class="mb-3">
   <label class="form-label">Prix (DT)</label>
   <input type="text" name="prix_c" class="form-control" value="<?= htmlspecialchars($_POST['prix_c'] ?? $edit['prix_c']) ?>">
@@ -731,6 +878,7 @@ if (isset($_GET['edit_cov'])) {
 </div>
 
 <!-- ID Utilisateur -->
+
 <div class="mb-3">
   <label class="form-label">ID Utilisateur</label>
   <input type="text" name="id_utilisateur" class="form-control" value="<?= htmlspecialchars($_POST['id_utilisateur'] ?? $edit['id_utilisateur']) ?>">
@@ -739,9 +887,22 @@ if (isset($_GET['edit_cov'])) {
   <?php endif; ?>
 </div>
 
-    <div class="text-center mt-4">
-      <button type="submit" class="btn btn-success">Enregistrer</button>
-    </div>
+<!-- Heure de départ -->
+
+<div class="mb-3">
+  <label class="form-label">Heure de départ</label>
+  <input type="time" name="heure_depart" class="form-control" value="<?= htmlspecialchars($_POST['heure_depart'] ?? $edit['heure_depart']) ?>">
+</div>
+<?php if (!empty($errors['heure_depart'])): ?>
+  <div class="text-danger small mt-1"><?= $errors['heure_depart'] ?></div>
+<?php endif; ?>
+
+
+<div class="text-center mt-4">
+  <button type="submit" class="btn btn-success">Enregistrer</button>
+</div>
+
+
   </form>
 </div>
 <?php
@@ -753,6 +914,7 @@ if (isset($_GET['edit_cov'])) {
 </div>
 
 <!-- Modal de confirmation -->
+
 <div class="modal fade" id="modalConfirmation" tabindex="-1" aria-labelledby="modalConfirmationLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-0 shadow">
@@ -794,9 +956,8 @@ if (isset($_GET['edit_cov'])) {
   </div>
 </footer>
 
-
-
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
 <script>
 document.addEventListener('DOMContentLoaded', function () {
   const deleteLinks = document.querySelectorAll('[data-id]');
@@ -810,7 +971,6 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 });
 </script>
-
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -834,7 +994,9 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 
 <?php if (isset($_GET['reservation_bloquee'])): ?>
+
 <!-- Modal de blocage -->
+
 <div class="modal fade" id="modalBlocage" tabindex="-1" aria-labelledby="blocageLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-0 shadow-lg">
@@ -856,81 +1018,311 @@ document.addEventListener('DOMContentLoaded', function () {
 </div>
 
 <!-- Script pour l'afficher automatiquement -->
+
 <script>
   const modal = new bootstrap.Modal(document.getElementById('modalBlocage'));
   modal.show();
 </script>
+
 <?php endif; ?>
 
 <script>
 function reserver(id_cov) {
-    // Afficher le container de la carte
+    console.log("🧭 Cliquez sur 'Voir sur la carte' pour ID:", id_cov);
+
     const mapContainer = document.getElementById('map-container-' + id_cov);
+    if (!mapContainer) {
+        console.error("❌ map-container introuvable pour ID:", id_cov);
+        return;
+    }
+
+    // Affiche le conteneur
     mapContainer.style.display = 'block';
 
-    // Initialiser la carte
+    const mapDiv = document.getElementById('map-' + id_cov);
+    if (!mapDiv) {
+        console.error("❌ Div de carte 'map-' introuvable pour ID:", id_cov);
+        return;
+    }
+
+    // Récupération de la position
     fetch('get_position_unique.php?id_cov=' + id_cov)
-    .then(response => response.json())
-    .then(data => {
-        if (data.latitude && data.longitude) {
-            var map = new google.maps.Map(document.getElementById('map-' + id_cov), {
-                zoom: 14,
-                center: {lat: parseFloat(data.latitude), lng: parseFloat(data.longitude)}
-            });
+        .then(response => response.json())
+        .then(data => {
+            console.log("📍 Données de position reçues:", data);
 
-            var marker = new google.maps.Marker({
-                position: {lat: parseFloat(data.latitude), lng: parseFloat(data.longitude)},
-                map: map,
-                title: "Position actuelle"
-            });
+            if (data.latitude && data.longitude) {
+                const lat = parseFloat(data.latitude);
+                const lng = parseFloat(data.longitude);
 
-            // Mise à jour de la position toutes les 5 secondes
-            setInterval(() => {
-                fetch('get_position_unique.php?id_cov=' + id_cov)
-                .then(response => response.json())
-                .then(update => {
-                    if (update.latitude && update.longitude) {
-                        var newPos = {lat: parseFloat(update.latitude), lng: parseFloat(update.longitude)};
-                        marker.setPosition(newPos);
-                        map.panTo(newPos);
+                const map = new google.maps.Map(mapDiv, {
+                    zoom: 14,
+                    center: { lat: lat, lng: lng }
+                });
+
+                const marker = new google.maps.Marker({
+                    position: { lat: lat, lng: lng },
+                    map: map,
+                    title: "Voiture en temps réel",
+                    icon: {
+                        url: "https://img.icons8.com/color/48/car--v1.png",
+                        scaledSize: new google.maps.Size(40, 40)
                     }
                 });
-            }, 5000);
-        }
+
+                // Mettre à jour la position toutes les 5 secondes
+                setInterval(() => {
+                    fetch('get_position_unique.php?id_cov=' + id_cov)
+                        .then(res => res.json())
+                        .then(update => {
+                            console.log("🔄 Mise à jour position:", update);
+                            if (update.latitude && update.longitude) {
+                                const newPos = {
+                                    lat: parseFloat(update.latitude),
+                                    lng: parseFloat(update.longitude)
+                                };
+                                marker.setPosition(newPos);
+                                map.panTo(newPos);
+                            }
+                        });
+                }, 5000);
+            } else {
+                console.warn("⚠️ Données de position incomplètes :", data);
+            }
+        })
+        .catch(error => {
+            console.error("❌ Erreur lors de la récupération des coordonnées :", error);
+        });
+}
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const deleteLinks = document.querySelectorAll('[data-id]');
+  const confirmBtn = document.getElementById('btn-confirm-delete');
+
+  deleteLinks.forEach(link => {
+    link.addEventListener('click', function () {
+      const id = this.getAttribute('data-id');
+      confirmBtn.setAttribute('href', 'supprimer-covoiturage.php?id=' + id);
     });
+  });
+
+  // Quand on clique sur "Supprimer" dans la modale
+  confirmBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    window.location.href = this.getAttribute('href');
+  });
+});
+</script>
+
+<script>
+// ✅ 1. Initialiser l'API Maps correctement
+let map; // Variable globale pour la carte
+let marker; // Variable globale pour le marqueur
+function initMap() {
+  <?php foreach ($result as $row): ?>
+    calculerDureeDistance(<?= $row['id_cov'] ?>, <?= json_encode($row['destination']) ?>);
+  <?php endforeach; ?>
 }
-</script>
 
+function startGeolocation(id_cov, user_id) {
+  const mapContainer = document.getElementById('map-container-' + id_cov);
+  const mapDiv = document.getElementById('map-' + id_cov);
+  if (!mapContainer || !mapDiv) return;
 
-/////////////////////////////
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC9LQbRP6lO29Mv6Etkbn9zci47oak-rtk&callback=dummyInit" async defer></script>
-<script>
-function dummyInit() {} // car Google Maps veut toujours un callback
-</script>
-//////////////////////////////
+  mapContainer.style.display = 'block';
 
-<script>
-function startGeolocation(id_cov) {
-    if (navigator.geolocation) {
-        navigator.geolocation.watchPosition(function(position) {
-            const latitude = position.coords.latitude;
-            const longitude = position.coords.longitude;
+  if (!navigator.geolocation) {
+    mapDiv.innerHTML = '<div class="alert alert-warning">Géolocalisation non supportée</div>';
+    return;
+  }
 
-            // Envoyer latitude et longitude au serveur toutes les 5 secondes
-            fetch('update_position.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `id_cov=${id_cov}&latitude=${latitude}&longitude=${longitude}`
-            });
-        }, function(error) {
-            console.error('Erreur de géolocalisation :', error);
-        }, { enableHighAccuracy: true });
+  let map, marker;
+
+  navigator.geolocation.watchPosition(position => {
+    const pos = {
+      lat: position.coords.latitude,
+      lng: position.coords.longitude
+    };
+
+    // 1ère initialisation
+    if (!map) {
+      map = new google.maps.Map(mapDiv, {
+        zoom: 16,
+        center: pos
+      });
+
+      marker = new google.maps.Marker({
+        position: pos,
+        map: map,
+        title: "Ma position actuelle",
+        icon: {
+          url: "https://img.icons8.com/color/48/car--v1.png",
+          scaledSize: new google.maps.Size(40, 40)
+        }
+      });
     } else {
-        alert("Géolocalisation non supportée par votre navigateur.");
+      marker.setPosition(pos);
+      map.panTo(pos);
     }
+
+    // Envoi au serveur pour mise à jour en base (si conducteur)
+    fetch('update_position.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        id_cov: id_cov,
+        latitude: pos.lat,
+        longitude: pos.lng
+      })
+    });
+  }, error => {
+    mapDiv.innerHTML = '<div class="alert alert-danger">Erreur : ' + error.message + '</div>';
+  }, {
+    enableHighAccuracy: true,
+    maximumAge: 0,
+    timeout: 10000
+  });
 }
+
+
+
+
+
+
 </script>
 
+<!-- ✅ 5. Charger l'API Maps avec le bon callback -->
+
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC9LQbRP6lO29Mv6Etkbn9zci47oak-rtk&callback=initMap&libraries=places" async defer></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const now = new Date();
+
+  <?php foreach ($result as $row): ?>
+    <?php if ($row['id_utilisateur'] == $idUtilisateurConnecte): ?>
+      const dep<?= $row['id_cov'] ?> = new Date("<?= $row['date'] . 'T' . $row['heure_depart'] ?>");
+
+      const diffMin = (dep<?= $row['id_cov'] ?> - now) / 60000;
+
+      if (diffMin > 0 && diffMin <= 15) {
+        // 🔔 Notification pour le conducteur
+        const alertBox = document.createElement('div');
+        alertBox.className = 'alert alert-warning text-center fixed-top m-5 shadow';
+        alertBox.style.zIndex = '1050';
+        alertBox.innerHTML = `
+          <strong>⏰ Attention :</strong> Votre covoiturage "<b><?= htmlspecialchars($row['destination']) ?></b>" commence dans moins de 15 minutes !
+        `;
+        document.body.appendChild(alertBox);
+      }
+    <?php endif; ?>
+  <?php endforeach; ?>
+});
+</script>
+<script>
+function calculerDureeDistance(id_cov, destination) {
+  if (!navigator.geolocation) {
+    document.getElementById('duree-' + id_cov).innerText = 'Géolocalisation non supportée';
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    function(position) {
+      const userLatLng = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude
+      };
+
+      const service = new google.maps.DistanceMatrixService();
+
+      service.getDistanceMatrix(
+        {
+          origins: [userLatLng],
+          destinations: [destination + ', Tunisie'],
+          travelMode: google.maps.TravelMode.DRIVING
+        },
+        function(response, status) {
+          if (status === 'OK' && response.rows[0].elements[0].status === 'OK') {
+
+            const element = response.rows[0].elements[0];
+            const duree = element.duration.text;
+            const distance = element.distance.text;
+            const minutes = element.duration.value / 60;
+            // Calcule l'heure d'arrivée estimée
+const depart = new Date(); // maintenant
+depart.setSeconds(depart.getSeconds() + element.duration.value); // ajoute durée
+
+const heures = depart.getHours().toString().padStart(2, '0');
+const minutesArrivee = depart.getMinutes().toString().padStart(2, '0');
+const heureEstimee = `${heures}:${minutesArrivee}`;
+
+// Affiche et met à jour le texte estimé
+document.getElementById('heure-texte-' + id_cov).innerText = `Arrivée estimée : ${heureEstimee}`;
+document.getElementById('heure-arrivee-' + id_cov).style.display = 'flex';
+
+
+document.getElementById('heure-arrivee-' + id_cov).style.display = 'flex';
+
+
+let texte;
+if (minutes < 1.5) {
+  texte = '1 minute restante';
+} else if (minutes < 60) {
+  texte = Math.round(minutes) + ' minutes restantes';
+} else {
+  const heures = Math.floor(minutes / 60);
+  const mins = Math.round(minutes % 60);
+  texte = `${heures}h ${mins} min restantes`;
+}
+
+document.getElementById('progress-duree-' + id_cov).style.display = 'block';
+document.getElementById('text-duree-' + id_cov).innerText = texte;
+
+// Exemple dynamique : réduit la largeur selon le temps restant
+let largeur = Math.max(5, Math.min(100, Math.round(100 * (minutes / 120)))); // basé sur max 2h
+const bar = document.getElementById('bar-' + id_cov);
+bar.style.width = largeur + '%';
+
+// Couleurs dynamiques selon urgence
+bar.classList.remove('bg-success', 'bg-warning', 'bg-danger', 'bg-info');
+if (minutes < 30) {
+  bar.classList.add('bg-danger');
+} else if (minutes < 60) {
+  bar.classList.add('bg-warning');
+} else {
+  bar.classList.add('bg-success');
+}
+
+
+
+          } else {
+            console.error("⛔ Erreur Distance Matrix :", response.rows[0].elements[0].status);
+
+            document.getElementById('duree-' + id_cov).innerText = 'Indisponible';
+          }
+        }
+      );
+    },
+    function(error) {
+      document.getElementById('duree-' + id_cov).innerText = 'Position introuvable';
+    }
+  );
+}
+
+
+</script>
+
+<script>
+<?php foreach ($result as $row): ?>
+  <?php if ($row['partage_actif'] == 1): ?>
+    setInterval(() => {
+      calculerDureeDistance(<?= $row['id_cov'] ?>, <?= json_encode($row['destination']) ?>);
+    }, 30000); // toutes les 30 secondes
+  <?php endif; ?>
+<?php endforeach; ?>
+</script>
 
 
 
