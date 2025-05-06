@@ -1,5 +1,5 @@
 <?php
-// 1) Active l'affichage des erreurs
+/*// 1) Active l'affichage des erreurs
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
@@ -39,3 +39,4 @@ try {
     // En cas d’erreur, affiche-la
     echo "❌ Erreur Twilio : " . $e->getMessage() . "\n";
 }
+*/

@@ -13,10 +13,10 @@ require_once $autoload;
 use Twilio\Rest\Client;
 
 // 2) Vos constantes Twilio
-const TWILIO_SID   = 'AC637027dcd605e7150c5d1c58a3edc95a';
+/*const TWILIO_SID   = 'AC637027dcd605e7150c5d1c58a3edc95a';
 const TWILIO_TOKEN = 'e82ff711a6fa2a36fb51e3431e331c10';
 const TWILIO_FROM  = '+18564167092';  // Votre numéro Twilio validé
-
+*/
 // 3) Connexion PDO
 try {
     $pdo = new PDO('mysql:host=localhost;dbname=lets_link;charset=utf8', 'root', '');
