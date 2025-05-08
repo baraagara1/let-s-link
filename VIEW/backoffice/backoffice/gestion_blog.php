@@ -229,6 +229,10 @@ $posts = $controller->getAllPosts();
                     <i class="fas fa-fw fa-blog"></i>
                     <span>Gestion des Blogs</span>
                 </a>
+                <a class="nav-link" href="gestion_commentaire.php">
+                    <i class="fas fa-fw fa-blog"></i>
+                    <span>Gestion des Commentaires</span>
+                </a>
             </li>
             <hr class="sidebar-divider">
         </ul>
@@ -323,7 +327,8 @@ $posts = $controller->getAllPosts();
                                 </a>
                                 <div class="dropdown-menu dropdown-menu-right shadow animated--fade-in" aria-labelledby="dropdownMenuLink">
                                     <div class="dropdown-header">Options:</div>
-                                    <button id="downloadPDF">Exporter en PDF</button>
+                                    <a href="export_pdf.php" class="dropdown-item">Exporter en PDF</a>
+
 
                                     <a class="dropdown-item" href="#">Exporter en Excel</a>
                                     <div class="dropdown-divider"></div>
