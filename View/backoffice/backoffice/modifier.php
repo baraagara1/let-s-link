@@ -47,6 +47,17 @@ try {
 } catch (Exception $e) {
     $error = $e->getMessage();
 }
+session_start();
+
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['user_email'])) {
+    header("Location: /mon_project_web/View/frontoffice/PROJECTS/login.php");
+    exit();
+}
+
+if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+    header("Location: /mon_project_web/View/frontoffice/PROJECTS/profile.php");
+    exit();
+}
 ?>
 
 <!DOCTYPE html>
@@ -130,7 +141,7 @@ try {
 
             <!-- Nav Item - Dashboard -->
             <li class="nav-item">
-                <a class="nav-link" href="index.html">
+                <a class="nav-link" href="index.php">
                     <i class="fas fa-fw fa-tachometer-alt"></i>
                     <span>Tableau De Bord</span></a>
             </li>
@@ -201,7 +212,7 @@ try {
                             <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button"
                                 data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                                 <span class="mr-2 d-none d-lg-inline text-gray-600 small">Administrateur</span>
-                                <img class="img-profile rounded-circle" src="img/undraw_profile.svg">
+                                
                             </a>
                             <!-- Dropdown - User Information -->
                             <div class="dropdown-menu dropdown-menu-right shadow animated--grow-in"

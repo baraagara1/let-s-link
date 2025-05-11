@@ -20,6 +20,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user'])) {
 
 // Récupération de la liste des utilisateurs
 $utilisateurs = $utilisateurC->afficherUtilisateurs();
+session_start();
+
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['user_email'])) {
+    header("Location: /mon_project_web/View/frontoffice/PROJECTS/login.php");
+    exit();
+}
+
+if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+    header("Location: /mon_project_web/View/frontoffice/PROJECTS/profile.php");
+    exit();
+}
 ?>
 
 <!DOCTYPE html>
@@ -152,7 +163,7 @@ $utilisateurs = $utilisateurC->afficherUtilisateurs();
                             <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button"
                                 data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                                 <span class="mr-2 d-none d-lg-inline text-gray-600 small">Administrateur</span>
-                                <img class="img-profile rounded-circle" src="img/undraw_profile.svg">
+
                             </a>
                             <!-- Dropdown - User Information -->
                             <div class="dropdown-menu dropdown-menu-right shadow animated--grow-in"

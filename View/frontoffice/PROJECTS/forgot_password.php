@@ -2,15 +2,16 @@
 require_once 'C:\xampp\htdocs\mon_project_web\config.php';
 require_once 'C:\xampp\htdocs\mon_project_web\controller\utilisateurC.php';
 
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
     $email = trim($_POST['email']);
     $utilisateurC = new UtilisateurC();
-    $resetCode = $utilisateurC->generateResetCodeForEmail($email);
+   
 
     if ($resetCode) {
-        // ✅ Send email logic (or redirect to confirmation)
+        
         echo "Lien de réinitialisation généré avec succès.";
-        // Optionally, send an email here using mail() or PHPMailer
+        
     } else {
         echo "Adresse email introuvable.";
     }

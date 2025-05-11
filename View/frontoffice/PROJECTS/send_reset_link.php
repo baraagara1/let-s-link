@@ -2,16 +2,36 @@
 require_once 'C:\xampp\htdocs\mon_project_web\config.php';
 require_once 'C:\xampp\htdocs\mon_project_web\controller\utilisateurC.php';
 
+$utilisateurC = new UtilisateurC();
+
+// Vérification de l'email et génération du code
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
     $email = trim($_POST['email']);
-    $utilisateurC = new UtilisateurC();
-
     $result = $utilisateurC->verifyEmailAndGenerateCode($email);
 
     if ($result) {
-        echo "<script>alert('Code de réinitialisation généré avec succès.'); window.location.href='send_reset_link.php';</script>";
+        // Stocker l'email en session pour la vérification ultérieure
+        session_start();
+        $_SESSION['reset_email'] = $email;
+        echo "<script>alert('Code de réinitialisation envoyé.');</script>";
     } else {
         echo "<script>alert('Cette adresse email n\'existe pas.'); window.history.back();</script>";
+        exit();
+    }
+}
+
+// Vérification du code saisi
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['code'])) {
+    session_start();
+    $email = $_SESSION['reset_email'] ?? '';
+    $enteredCode = $_POST['code'];
+    
+    if ($utilisateurC->verifyResetCode($email, $enteredCode)) {
+        // Code valide, rediriger vers la page de réinitialisation
+        header("Location: reset_password.php");
+        exit();
+    } else {
+        echo "<script>alert('Code incorrect. Veuillez réessayer.');</script>";
     }
 }
 ?>
@@ -95,49 +115,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
         <h1>Vérification du code</h1>
         <p>Nous avons envoyé un code de vérification à votre adresse email. Veuillez le saisir ci-dessous.</p>
         
-        <form action="/verifier-code" method="POST">
+        <form method="POST" action="">
             <div class="code-input">
-                <input type="text" name="code1" maxlength="1" pattern="[0-9]" required>
-                <input type="text" name="code2" maxlength="1" pattern="[0-9]" required>
-                <input type="text" name="code3" maxlength="1" pattern="[0-9]" required>
-                <input type="text" name="code4" maxlength="1" pattern="[0-9]" required>
-                <input type="text" name="code5" maxlength="1" pattern="[0-9]" required>
-                
+                <input type="text" name="code1" maxlength="1" required>
+                <input type="text" name="code2" maxlength="1" required>
+                <input type="text" name="code3" maxlength="1" required>
+                <input type="text" name="code4" maxlength="1" required>
+                <input type="text" name="code5" maxlength="1" required>
             </div>
-            
-            <button type="submit">Vérifier le code</button>
+            <input type="hidden" name="code" id="fullCode">
+            <button type="button" onclick="submitCode()">Vérifier le code</button>
         </form>
         
         <div class="resend">
-            <p>Vous n'avez pas reçu de code? <a href="/renvoyer-code">Renvoyer le code</a></p>
+            <p>Vous n'avez pas reçu de code? <a href="javascript:resendCode()">Renvoyer le code</a></p>
         </div>
     </div>
 
     <script>
-        // Script pour faciliter la saisie du code
         document.addEventListener('DOMContentLoaded', function() {
             const inputs = document.querySelectorAll('.code-input input');
             
             inputs.forEach((input, index) => {
-                // Passer au champ suivant quand un chiffre est saisi
                 input.addEventListener('input', function() {
-                    if (this.value.length === 1) {
-                        if (index < inputs.length - 1) {
-                            inputs[index + 1].focus();
-                        }
+                    if (this.value.length === 1 && index < inputs.length - 1) {
+                        inputs[index + 1].focus();
                     }
+                    updateFullCode();
                 });
                 
-                // Gérer la suppression avec la touche retour
                 input.addEventListener('keydown', function(e) {
-                    if (e.key === 'Backspace' && this.value.length === 0) {
-                        if (index > 0) {
-                            inputs[index - 1].focus();
-                        }
+                    if (e.key === 'Backspace' && this.value.length === 0 && index > 0) {
+                        inputs[index - 1].focus();
                     }
                 });
             });
         });
+
+        function updateFullCode() {
+            const codes = Array.from(document.querySelectorAll('.code-input input'))
+                              .map(input => input.value)
+                              .join('');
+            document.getElementById('fullCode').value = codes;
+        }
+
+        function submitCode() {
+            updateFullCode();
+            document.forms[0].submit();
+        }
+
+        function resendCode() {
+            // Vous pouvez implémenter ici la logique pour renvoyer le code
+            alert('Un nouveau code a été envoyé à votre adresse email.');
+        }
     </script>
 </body>
 </html>

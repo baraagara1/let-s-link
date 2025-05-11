@@ -24,7 +24,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         try {
             $utilisateurC->ajouterUtilisateur($utilisateur);
             $message = "✅ Utilisateur ajouté avec succès.";
-            header("Location: index.html"); // Redirection après ajout
+            header("Location: index.php"); // Redirection après ajout
             exit;
         } catch (Exception $e) {
             $message = "❌ Erreur lors de l'ajout : " . $e->getMessage();

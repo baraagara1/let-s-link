@@ -2,35 +2,40 @@
 require_once 'C:\xampp\htdocs\mon_project_web\controller\utilisateurC.php';
 
 session_start();
+if (isset($_SESSION['user_id'])) {
+    if ($_SESSION['user_role'] === 'admin') {
+        header('Location: /mon_project_web/view/backoffice/backoffice/index.php');
+    } else {
+        header('Location: profile.php');
+    }
+    exit();
+}
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['email']) && isset($_POST['password'])) {
+    if (!empty($_POST['email']) && !empty($_POST['password'])) {
         $email = $_POST['email'];
         $password = $_POST['password'];
-        
+
         $userController = new UtilisateurC();
-        $role = $userController->verifierConnexion($email, $password);
-        
-        if ($role !== false) {
-            // Connexion réussie
+        $result = $userController->verifierConnexion($email, $password);
+
+        if ($result !== false) {
             $_SESSION['user_email'] = $email;
-            $_SESSION['user_role'] = $role;
-            
-            // Redirection en fonction du rôle
-            if ($role === 'admin') {
-                header('Location: /mon_project_web/view/backoffice/backoffice/index.html');
+            $_SESSION['user_role'] = $result['role'];
+            $_SESSION['user_id'] = $result['id'];
+
+            if ($result['role'] === 'admin') {
+                header('Location: /mon_project_web/view/backoffice/backoffice/index.php');
             } else {
-                header('Location: index.html');
+                header('Location: profile.php');
             }
             exit();
         } else {
             $error = "Email ou mot de passe incorrect";
-            
         }
     } else {
         $error = "Veuillez remplir tous les champs";
-        echo "<script>alert('Veuillez remplir tous les champs');</script>";
     }
 }
 ?>

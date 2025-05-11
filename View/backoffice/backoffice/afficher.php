@@ -23,7 +23,6 @@ if (isset($_GET['export_user']) && is_numeric($_GET['export_user'])) {
         $pdf->AddPage();
         $pdf->SetFont('helvetica', '', 12);
 
-        // ✅ Text info to encode in QR code (no URL)
         $userDataForQR = "Fiche Utilisateur\n";
         $userDataForQR .= "ID: {$user['id']}\n";
         $userDataForQR .= "Nom: {$user['nom']}\n";
@@ -32,22 +31,17 @@ if (isset($_GET['export_user']) && is_numeric($_GET['export_user'])) {
         $userDataForQR .= "Téléphone: {$user['telephone']}\n";
         $userDataForQR .= "Adresse: {$user['adresse']}\n";
         $userDataForQR .= "Rôle: {$user['role']}\n";
-        $userDataForQR .= "Statut: " . (($user['actif'] ?? 1) ? 'Actif' : 'Inactif');
 
-        // CSS style
         $style = '
         <style>
             .header { color: #2d5bd8; font-size: 18px; font-weight: bold; margin-bottom: 10px; }
             .table { border-collapse: collapse; width: 100%; margin-bottom: 15px; }
             .table th { background-color: #f2f2f2; text-align: left; padding: 8px; width: 30%; }
             .table td { padding: 8px; border-bottom: 1px solid #ddd; }
-            .status-active { color: #1cc88a; font-weight: bold; }
-            .status-inactive { color: #e74a3b; font-weight: bold; }
             .qr-container { text-align: center; margin: 15px 0; }
         </style>
         ';
 
-        // HTML content for the PDF
         $html = $style . '
         <div class="header">Fiche Utilisateur</div>
         <table class="table">
@@ -58,8 +52,6 @@ if (isset($_GET['export_user']) && is_numeric($_GET['export_user'])) {
             <tr><th>Téléphone</th><td>' . htmlspecialchars($user['telephone']) . '</td></tr>
             <tr><th>Adresse</th><td>' . htmlspecialchars($user['adresse']) . '</td></tr>
             <tr><th>Rôle</th><td>' . htmlspecialchars($user['role']) . '</td></tr>
-            <tr><th>Statut</th><td><span class="' . (($user['actif'] ?? 1) ? 'status-active' : 'status-inactive') . '">' 
-                . (($user['actif'] ?? 1) ? 'Actif' : 'Inactif') . '</span></td></tr>
         </table>
 
         <div class="qr-container">
@@ -68,7 +60,6 @@ if (isset($_GET['export_user']) && is_numeric($_GET['export_user'])) {
 
         $pdf->writeHTML($html, true, false, true, false, '');
 
-        // QR Code with user info text
         $qrCodeParams = [
             'border' => 1,
             'vpadding' => 'auto',
@@ -81,7 +72,6 @@ if (isset($_GET['export_user']) && is_numeric($_GET['export_user'])) {
         $pdf->write2DBarcode($userDataForQR, 'QRCODE,L', 75, $pdf->GetY(), 60, 60, $qrCodeParams, 'N');
         $pdf->SetY($pdf->GetY() + 65);
 
-        // Footer
         $pdf->writeHTML('<div style="text-align:center; font-size:10px; color:#888;">'
             . 'Généré le ' . date('d/m/Y à H:i') . ' - Pure Vibe</div>', true, false, true, false, '');
 
@@ -90,7 +80,7 @@ if (isset($_GET['export_user']) && is_numeric($_GET['export_user'])) {
     }
 }
 
-// Export PDF global (votre code existant)
+// Export PDF global
 if (isset($_GET['export']) && $_GET['export'] == 'pdf') {
     require_once 'C:\xampp\htdocs\mon_project_web\TCPDF-main\tcpdf.php';
     
@@ -108,7 +98,6 @@ if (isset($_GET['export']) && $_GET['export'] == 'pdf') {
         <th>Téléphone</th>
         <th>Adresse</th>
         <th>Rôle</th>
-        <th>Statut</th>
     </tr>';
 
     foreach ($utilisateurs as $user) {
@@ -120,7 +109,6 @@ if (isset($_GET['export']) && $_GET['export'] == 'pdf') {
             <td>' . htmlspecialchars($user['telephone']) . '</td>
             <td>' . htmlspecialchars($user['adresse']) . '</td>
             <td>' . htmlspecialchars($user['role']) . '</td>
-            <td>' . (($user['actif'] ?? 1) ? 'Actif' : 'Inactif') . '</td>
         </tr>';
     }
     $html .= '</table>';
@@ -130,6 +118,19 @@ if (isset($_GET['export']) && $_GET['export'] == 'pdf') {
     exit;
 }
 
+session_start();
+
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['user_email'])) {
+    header("Location: /mon_project_web/View/frontoffice/PROJECTS/login.php");
+    exit();
+}
+
+if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+    header("Location: /mon_project_web/View/frontoffice/PROJECTS/profile.php");
+    exit();
+}
+$showStats = isset($_GET['stats']) && $_GET['stats'] == '1';
+$statsData = $showStats ? $utilisateurC->getStatsForCircles() : null;
 ?>
 
 <!DOCTYPE html>
@@ -148,10 +149,121 @@ if (isset($_GET['export']) && $_GET['export'] == 'pdf') {
         .bg-gradient-primary { background-color: rgb(45, 91, 216) !important; background-image: none !important; }
         .dynamic-frame { border-left: 4px solid #e74a3b; transition: all 0.3s; }
         .user-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }
-        .badge-active { background-color: #1cc88a; }
-        .badge-inactive { background-color: #e74a3b; }
         .export-buttons .btn { margin-right: 10px; }
         .phone-number { direction: ltr; text-align: right; }
+        
+        /* Nouveau style pour les cercles statistiques */
+        .stats-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        
+        .stat-circle {
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            background: white;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            border: 10px solid;
+        }
+        
+        .stat-circle:hover {
+            transform: scale(1.05);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.15);
+        }
+        
+        .stat-circle::before {
+            content: '';
+            position: absolute;
+            width: calc(100% + 20px);
+            height: calc(100% + 20px);
+            border-radius: 50%;
+            border: 2px dashed;
+            opacity: 0.2;
+        }
+        
+        .stat-circle-total {
+            border-color: #4e73df;
+            color: #4e73df;
+        }
+        .stat-circle-total::before {
+            border-color: #4e73df;
+        }
+        
+        .stat-circle-admin {
+            border-color: #e74a3b;
+            color: #e74a3b;
+        }
+        .stat-circle-admin::before {
+            border-color: #e74a3b;
+        }
+        
+        .stat-circle-client {
+            border-color: #1cc88a;
+            color: #1cc88a;
+        }
+        .stat-circle-client::before {
+            border-color: #1cc88a;
+        }
+        
+        .stat-circle-other {
+            border-color: #36b9cc;
+            color: #36b9cc;
+        }
+        .stat-circle-other::before {
+            border-color: #36b9cc;
+        }
+        
+        .stat-value {
+            font-size: 3rem;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 5px;
+            z-index: 1;
+        }
+        
+        .stat-label {
+            font-size: 1rem;
+            text-transform: uppercase;
+            font-weight: 600;
+            text-align: center;
+            z-index: 1;
+        }
+        
+        .stat-percent {
+            position: absolute;
+            bottom: 20px;
+            background: white;
+            padding: 3px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            z-index: 1;
+        }
+        
+        @media (max-width: 768px) {
+            .stat-circle {
+                width: 140px;
+                height: 140px;
+                border-width: 8px;
+            }
+            .stat-value {
+                font-size: 2.2rem;
+            }
+            .stats-container {
+                gap: 20px;
+            }
+        }
     </style>
 </head>
 <body id="page-top">
@@ -163,7 +275,7 @@ if (isset($_GET['export']) && $_GET['export'] == 'pdf') {
         </a>
         <hr class="sidebar-divider my-0">
         <li class="nav-item">
-            <a class="nav-link" href="index.html"><i class="fas fa-fw fa-tachometer-alt"></i><span>Tableau De Bord</span></a>
+            <a class="nav-link" href="index.php"><i class="fas fa-fw fa-tachometer-alt"></i><span>Tableau De Bord</span></a>
         </li>
         <hr class="sidebar-divider">
         <div class="sidebar-heading">Interface</div>
@@ -195,7 +307,7 @@ if (isset($_GET['export']) && $_GET['export'] == 'pdf') {
                     <li class="nav-item dropdown no-arrow">
                         <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                             <span class="mr-2 d-none d-lg-inline text-gray-600 small">Administrateur</span>
-                            <img class="img-profile rounded-circle" src="img/undraw_profile.svg">
+                            
                         </a>
                         <div class="dropdown-menu dropdown-menu-right shadow animated--grow-in" aria-labelledby="userDropdown">
                             <a class="dropdown-item" href="#"><i class="fas fa-user fa-sm fa-fw mr-2 text-gray-400"></i>Profil</a>
@@ -207,10 +319,45 @@ if (isset($_GET['export']) && $_GET['export'] == 'pdf') {
             </nav>
 
             <div class="container-fluid">
+                <?php if ($showStats && $statsData): ?>
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1 class="h3 mb-0 text-gray-800">Statistiques Utilisateurs</h1>
+                    <a href="afficher.php?stats=0" class="btn btn-secondary btn-sm">
+                        <i class="fas fa-times"></i> Fermer
+                    </a>
+                </div>
+                
+                <div class="stats-container">
+                    <!-- Cercle Total -->
+                    <div class="stat-circle stat-circle-total">
+                        <div class="stat-value"><?= $statsData['total'] ?></div>
+                        <div class="stat-label">Total Utilisateurs</div>
+                        <span class="stat-percent">100%</span>
+                    </div>
+                    
+                    <!-- Cercles par rôle -->
+                    <?php foreach ($statsData['roles'] as $role): 
+                        $percent = round(($role['count']/$statsData['total'])*100, 1);
+                        $circleClass = 'stat-circle-' . (
+                            $role['role'] == 'admin' ? 'admin' : 
+                            ($role['role'] == 'client' ? 'client' : 'other')
+                        );
+                    ?>
+                    <div class="stat-circle <?= $circleClass ?>">
+                        <div class="stat-value"><?= $role['count'] ?></div>
+                        <div class="stat-label"><?= ucfirst($role['role']) ?></div>
+                        <span class="stat-percent"><?= $percent ?>%</span>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+
                 <div class="d-sm-flex align-items-center justify-content-between mb-4">
                     <h1 class="h3 mb-0 text-gray-800">Liste des Utilisateurs</h1>
                     <div class="export-buttons">
-                        <button class="btn btn-success" onclick="exportToExcel()"><i class="fas fa-file-excel mr-1"></i> Excel</button>
+                        <a href="afficher.php?stats=<?= $showStats ? '0' : '1' ?>" class="btn btn-success">
+                            <i class="fas fa-chart-pie mr-1"></i> <?= $showStats ? 'Masquer Stats' : 'Afficher Stats' ?>
+                        </a>
                         <a href="afficher.php?export=pdf" class="btn btn-danger"><i class="fas fa-file-pdf mr-1"></i> PDF</a>
                     </div>
                 </div>
@@ -240,9 +387,8 @@ if (isset($_GET['export']) && $_GET['export'] == 'pdf') {
                                                 <th>Téléphone</th>
                                                 <th>Adresse</th>
                                                 <th>Rôle</th>
-                                                <th>Statut</th>
+                                                <th>Actions</th>
                                             </tr>
-                                            
                                         </thead>
                                         <tbody>
                                             <?php foreach ($utilisateurs as $u): ?>
@@ -253,13 +399,11 @@ if (isset($_GET['export']) && $_GET['export'] == 'pdf') {
                                                 <td class="phone-number"><?= htmlspecialchars($u['telephone']) ?></td>
                                                 <td><?= htmlspecialchars($u['adresse']) ?></td>
                                                 <td><?= htmlspecialchars($u['role']) ?></td>
-                                                <td><span class="badge <?= ($u['actif'] ?? 1) ? 'badge-active' : 'badge-inactive' ?>"><?= ($u['actif'] ?? 1) ? 'Actif' : 'Inactif' ?></span></td>
                                                 <td>
-    
-                                                <a href="afficher.php?export_user=<?= $u['id'] ?>" class="btn btn-sm btn-info">
-    <i class="fas fa-file-pdf"></i> PDF
-</a>
-</td>
+                                                    <a href="afficher.php?export_user=<?= $u['id'] ?>" class="btn btn-sm btn-info">
+                                                        <i class="fas fa-file-pdf"></i> PDF
+                                                    </a>
+                                                </td>
                                             </tr>
                                             <?php endforeach; ?>
                                         </tbody>
@@ -271,10 +415,16 @@ if (isset($_GET['export']) && $_GET['export'] == 'pdf') {
                 </div>
             </div>
         </div>
-<form method="GET" action="afficher.php">
-    <button type="submit" name="tri" value="ASC">Trier par nom croissante</button>
-    <button type="submit" name="tri" value="DESC">Trier par nom décroissante</button>
-</form>
+
+        <form method="GET" action="afficher.php" class="mb-3 ml-3">
+            <button type="submit" name="tri" value="ASC" class="btn btn-outline-primary">
+                <i class="fas fa-sort-alpha-down"></i> Trier par nom (A-Z)
+            </button>
+            <button type="submit" name="tri" value="DESC" class="btn btn-outline-primary">
+                <i class="fas fa-sort-alpha-down-alt"></i> Trier par nom (Z-A)
+            </button>
+        </form>
+
         <footer class="sticky-footer bg-white">
             <div class="container my-auto">
                 <div class="copyright text-center my-auto">
@@ -302,7 +452,6 @@ if (isset($_GET['export']) && $_GET['export'] == 'pdf') {
     </div>
   </div>
 </div>
-
 
 <script src="vendor/jquery/jquery.min.js"></script>
 <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
@@ -333,15 +482,13 @@ $(document).ready(function() {
 });
 
 function exportToExcel() {
-    // Créer un fichier Excel avec les données du tableau
-    let csv = 'ID,Nom complet,Email,Téléphone,Adresse,Rôle,Statut\n';
+    let csv = 'ID,Nom complet,Email,Téléphone,Adresse,Rôle\n';
     
     $('#dataTable tbody tr').each(function() {
         const cells = $(this).find('td');
-        csv += `"${cells.eq(0).text()}","${cells.eq(1).text()}","${cells.eq(2).text()}","${cells.eq(3).text()}","${cells.eq(4).text()}","${cells.eq(5).text()}","${cells.eq(6).text()}"\n`;
+        csv += `"${cells.eq(0).text()}","${cells.eq(1).text()}","${cells.eq(2).text()}","${cells.eq(3).text()}","${cells.eq(4).text()}","${cells.eq(5).text()}"\n`;
     });
     
-    // Créer un lien de téléchargement
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
@@ -357,6 +504,3 @@ function exportToExcel() {
 </script>
 </body>
 </html>
-
-
-
